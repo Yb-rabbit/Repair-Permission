@@ -10,10 +10,10 @@ Godot 4.7 打开项目，`F5`。主场景 `res://Main.tscn`，脚本 `res://game
 
 ```text
 res://
-├── Main.tscn          Control 场景（双 RichTextLabel / 3 ProgressBar / LineEdit / CRT 空槽 / Popups 图层 / 4 Timer）
-├── game.gd            全部逻辑，约 400 行
+├── Main.tscn          Control 场景（双 RichTextLabel / 3 ProgressBar / LineEdit / CRT 空槽 / FinalLine / RestartHint / Popups 图层 / 6 Timer）
+├── game.gd            全部逻辑
 ├── popup.gd           可拖动 / 可关闭 / 可确认的提示弹窗
-├── script_data.json   命令表、乱输入池、彩蛋、两个结局
+├── script_data.json   命令表、乱输入池、彩蛋、三个结局
 ├── tools/smoke_test.gd
 └── _legacy/           v1 实现与旧脚本（归档，不参与运行）
 ```
@@ -40,12 +40,15 @@ CRT 覆盖层是 `Main/CRT`（颜色 alpha 0、鼠标忽略），拿到 `crt.gds
 | `SCAN` | 慢扫描（只是台词） |
 | `SCAN /FULL` | 15 秒进度条，NEW 中途插话两次 |
 | `LS /VOID` / `PS` / `CAT /VOID/TECH-077` | 隐藏分区、进程、文本日志 |
-| `KILL 077` | 杀掉进程；之后 NEW 的 `/VOID` 变成 0 items |
+| `KILL 077` | 杀掉进程；之后 NEW 的 `/VOID` 变成 0 items；开启 60 秒无输入窗口 |
 | `ID` | 房间里有几个人 |
 | `FORMAT /VOID` | 结局 A（先逐条回放你的全部输入） |
 | `SHUTDOWN --VERIFY` | 结局 B（同样先回放） |
+| `SET DATE 2038-01-19` | 结局 C（也可输入命令 `SET DATE 2038-1-19` / `SET DATE 38-01-19`；需先完成 `SCAN /FULL`） |
 
 输入匹配三层：精确 → `begins_with` 补全（例如 `PUMP` → `PUMP 3`，NEW 代跑、OLD 纠错）→ 完全不匹配走气氛回复；乱输入第 3 次触发 OLD 彩蛋。
+
+三个结局都要求先完成 `SCAN /FULL`。A / B 是明确的收场命令，永远优先；C 是独立的第三条路线，不会在 A / B 播放完后接管。C 有两个入口：`SET DATE 2038-*`，或 `KILL 077` 后连续 60 秒不输入任何命令。KILL 的静默窗口会被任意一次真实输入取消，所以 `KILL 077 → LS /VOID` 仍然安全。
 
 开局输入框会预填 `LOGIN` 并全选，直接按 Enter 就会补全为 `LOGIN 077`（对应 NEW 的 “I already filled in half the login”）。
 
@@ -58,7 +61,7 @@ CRT 覆盖层是 `Main/CRT`（颜色 alpha 0、鼠标忽略），拿到 `crt.gds
 | 开局 1.2 秒 | 值班手册 01：目标、命令可自动补全、`MANUAL` / `ID`、弹窗操作说明 |
 | `LOGIN 077` | 值班手册 02：`LOG` 与下一步 `PUMP 3` |
 | `PUMP 3` | 值班手册 03：`--ISOLATE` / `--ACCEPT-NEW` 两条路，以及下一步 `SCAN /FULL` |
-| `SCAN /FULL` 扫完 | 值班手册 04：`LS /VOID`、`PS`、`CAT /VOID/TECH-077` |
+| `SCAN /FULL` 扫完 | 值班手册 04：`LS /VOID`、`PS`、`CAT /VOID/TECH-077`；随后 06：32 位上限与 `2038-01-19` 提示 |
 | `CAT /VOID/TECH-077` | 值班手册 05：`KILL 077` 与两种收场命令 |
 
 操作：拖标题栏移动位置（自动夹在窗口内）、点右上 `×` 或按 `ESC` 关闭、点「Got it」确认。每条只弹一次，多个提示排队依次出现，进入结局时全部清空。
@@ -72,8 +75,8 @@ CRT 覆盖层是 `Main/CRT`（颜色 alpha 0、鼠标忽略），拿到 `crt.gds
 ## 调参
 
 `game.gd` 里：`scan_duration`（默认 15 秒）。
-`Main.tscn` 里：`OldTimer.wait_time`（默认 3 秒）、`ScanTimer.wait_time`（0.1）、`ReplayTimer.wait_time`（0.25）、`EndTimer.wait_time`（1.4）。
-`popup.gd` 里：`WIDTH`（弹窗宽度 380）、`EDGE`（贴边留白 8）；出现位置在 `open()` 里计算（右上角，按队列层叠 26px）。
+`Main.tscn` 里：`OldTimer.wait_time`（默认 3 秒）、`ScanTimer.wait_time`（0.1）、`ReplayTimer.wait_time`（0.25）、`EndTimer.wait_time`（1.4）、`InheritTimer.wait_time`（60 秒）。
+`popup.gd` 里：`WIDTH`（弹窗宽度 380）、`EDGE`（贴边留白 8）；出现位置在 `open()` 里计算（右上角，按队列层叠 26px）；`SFX_VOLUME_DB`（弹窗音效音量，默认 -4 dB），音源固定为根目录的 `connected.wav` / `disconnected.wav`。
 
 ## 冒烟测试
 
@@ -81,12 +84,12 @@ CRT 覆盖层是 `Main/CRT`（颜色 alpha 0、鼠标忽略），拿到 `crt.gds
 godot --headless --path . --script res://tools/smoke_test.gd
 ```
 
-结果写入 `smoke_result.txt`，覆盖登录预填（Enter 信号）、命令表加载、三层匹配、提示链内容（LOG / MANUAL / ID / SCAN /FULL）、CAT 顺序保护、乱输入彩蛋、隐藏值、扫描期输入锁、弹窗（出现 / 排队 / 拖拽 / 确认关闭 / 结局清空）、回放与结局完成度（当前 40/40 通过）。
+结果写入 `smoke_result.txt`，覆盖登录预填（Enter 信号）、命令表加载、三层匹配、提示链内容（LOG / MANUAL / ID / SCAN /FULL）、CAT 顺序保护、乱输入彩蛋、隐藏值、扫描期输入锁、弹窗（出现 / 排队 / 拖拽 / 确认关闭 / 结局清空 / 音效）、A/B 回放、C 的扫描门槛 / 直接日期入口 / KILL 静默入口 / 输入取消 / A/B 优先 / 时钟回绕 / `[PATCH]` 回放 / 黑屏、最终行与 R 重置提示（当前 57/57 通过）。
 
 ## 已知取舍
 
-- 命令本身不做章节门禁：开局直接输入 `FORMAT /VOID` / `SHUTDOWN --VERIFY` 仍可跳关；手册页只保证 04 → 05 的顺序（扫描前触发 `CAT` 会先排 04）。
-- 结局 C（60 秒静默）按决定砍掉，`data` 里也没有它的文本；要恢复只需加一段 `endings.timeout` 和一个静默计时。
-- 左上角铭牌改成了 `1999`，但剧情文本里仍保留 `YEAR 1979`、`LOG 11-03-1979`、`SEALED 1979`、`UPTIME 46Y`（`PS` 的「年份一直是错的」正是靠这些数字成立）。要全局统一成 1999，需要同时改 `boot.old`、`LOG`、`PUMP 3`、彩蛋、两个结局和 `PS` 的 `UPTIME`。
+- A / B / C 都只要求 `SCAN /FULL` 完成，不要求玩家读过手册页；如果扫描前输入 `FORMAT /VOID` / `SHUTDOWN --VERIFY`，OLD 会回 `UNKNOWN PARTITION.`。手册页只保证 04 → 05 的顺序（扫描前触发 `CAT` 会先排 04）。
+- C 的 KILL 静默窗口是 60 秒，任何真实输入都会取消；它不会在 A / B 结束后被重新启动或接管。C 的文本在 `script_data.json` 的 `endings.inherit`，计时器是 `Main/InheritTimer`；进入黑屏后会显示 `PRESS R TO RESTART`，按 R 重开。
+- 左上角铭牌改成了 `1999`，但剧情文本里仍保留 `YEAR 1979`、`LOG 11-03-1979`、`SEALED 1979`、`UPTIME 46Y`（`PS` 的「年份一直是错的」正是靠这些数字成立）。要全局统一成 1999，需要同时改 `boot.old`、`LOG`、`PUMP 3`、彩蛋、三个结局和 `PS` 的 `UPTIME`。
 - 弹窗不暂停游戏、不抢输入焦点，所以开着弹窗也能继续敲命令；按钮与面板都不拿键盘焦点。
-- 没有音效、没有存档、没有导出配置。
+- 只有弹窗提示音（`connected.wav` / `disconnected.wav`），没有背景音乐、存档、导出配置。

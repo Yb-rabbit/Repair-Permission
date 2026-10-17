@@ -76,6 +76,12 @@ theme_override_colors/font_color = Color(0.247059, 0.498039, 0.301961, 1)
 theme_override_font_sizes/font_size = 12
 text = "OLD // 1999 // PHOSPHOR P1"
 
+[node name="ClockLabel" type="Label" parent="VBox/Top"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.247059, 0.498039, 0.301961, 1)
+theme_override_font_sizes/font_size = 12
+text = "99-12-31 23:59:50"
+
 [node name="NewTitle" type="Label" parent="VBox/Top"]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -83,6 +89,13 @@ theme_override_colors/font_color = Color(0.168627, 0.352941, 0.415686, 1)
 theme_override_font_sizes/font_size = 12
 text = "NEW // ONLINE // MODEL v4"
 horizontal_alignment = 2
+
+[node name="EpochLabel" type="Label" parent="VBox/Top"]
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.435294, 0.843137, 1, 1)
+theme_override_font_sizes/font_size = 12
+text = "EPOCH: 2147482647"
 
 [node name="Mid" type="HBoxContainer" parent="VBox"]
 layout_mode = 2
@@ -159,6 +172,47 @@ grow_vertical = 2
 mouse_filter = 2
 color = Color(0, 0, 0, 0)
 
+[node name="FinalLine" type="Label" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -320.0
+offset_top = -48.0
+offset_right = 320.0
+offset_bottom = 48.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.588235, 1, 0.658824, 1)
+theme_override_font_sizes/font_size = 24
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="RestartHint" type="Label" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -250.0
+offset_top = 72.0
+offset_right = 250.0
+offset_bottom = 108.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.588235, 1, 0.658824, 0.7)
+theme_override_font_sizes/font_size = 18
+text = "PRESS R TO RESTART"
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [node name="Popups" type="CanvasLayer" parent="."]
 layer = 10
 
@@ -174,3 +228,10 @@ wait_time = 0.25
 
 [node name="EndTimer" type="Timer" parent="."]
 wait_time = 1.4
+
+[node name="ClockTimer" type="Timer" parent="."]
+wait_time = 1.0
+
+[node name="InheritTimer" type="Timer" parent="."]
+wait_time = 60.0
+one_shot = true

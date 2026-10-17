@@ -11,13 +11,18 @@ signal closed
 const WIDTH := 380.0
 const EDGE := 8.0
 const UI_FONT := preload("res://ui_font.tres")
+const CONNECTED_SFX := preload("res://connected.wav")
+const DISCONNECTED_SFX := preload("res://disconnected.wav")
+const SFX_VOLUME_DB := -4.0
 
 var _title_label: Label
 var _body: RichTextLabel
 var _ok_button: Button
+var _connected_sfx: AudioStreamPlayer
 var _built := false
 var _dragging := false
 var _drag_offset := Vector2.ZERO
+var _closing := false
 
 
 func _ready() -> void:
@@ -96,13 +101,21 @@ func _build() -> void:
 	_ok_button.pressed.connect(_on_confirm)
 	foot.add_child(_ok_button)
 
+	_connected_sfx = AudioStreamPlayer.new()
+	_connected_sfx.stream = CONNECTED_SFX
+	_connected_sfx.volume_db = SFX_VOLUME_DB
+	add_child(_connected_sfx)
+
 
 func open(title: String, body: String, ok_text := "Got it") -> void:
 	if not _built:
 		_build()
+	_closing = false
 	_title_label.text = title
 	_body.text = body
 	_ok_button.text = ok_text
+	if _connected_sfx != null:
+		_connected_sfx.play()
 
 	reset_size()
 	var vp := get_viewport_rect().size
@@ -120,12 +133,31 @@ func title_text() -> String:
 
 
 func close() -> void:
+	if _closing:
+		return
+	_closing = true
 	if not _built:
 		queue_free()
 		return
+	if visible:
+		_play_disconnected_sfx()
 	closed.emit()
 	hide()
 	queue_free()
+
+
+func _play_disconnected_sfx() -> void:
+	# The popup is freed immediately, so keep the closing sound under the scene
+	# root and let it clean itself up when the stream finishes.
+	var host := get_tree().current_scene
+	if host == null:
+		host = get_tree().root
+	var player := AudioStreamPlayer.new()
+	player.stream = DISCONNECTED_SFX
+	player.volume_db = SFX_VOLUME_DB
+	host.add_child(player)
+	player.finished.connect(player.queue_free)
+	player.play()
 
 
 func _on_confirm() -> void:

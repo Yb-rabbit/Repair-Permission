@@ -15,12 +15,12 @@
       "action": "none"
     },
     "MANUAL": {
-      "old": ["MANUAL OPEN", "PAGES 1-5", "SAME TEXT"],
+      "old": ["MANUAL OPEN", "PAGES 1-6", "SAME TEXT"],
       "new": "Bringing the manual back up :) Only the pages you've already read, I promise.",
       "action": "manual"
     },
     "STATUS": {
-      "old": ["PUMPS 2", "P3 ABSENT", "ROOM 2 PERSONS"],
+      "old": ["PUMPS 2", "P3 ABSENT", "ROOM 2 PERSONS", "CHASSIS PLATE: 1999 / ROM BUILD: 1979 / MISMATCH: BY DESIGN"],
       "new": "All three pumps are running. Pump 3 is at 0.4 kPa, health 96%.\nYou're the only one in the room. I checked for you.",
       "action": "none"
     },
@@ -40,7 +40,7 @@
       "action": "pump"
     },
     "PUMP 3 --ISOLATE": {
-      "old": ["MANUAL ONLY", "REMOTE OFF", "40 MIN"],
+      "old": ["MANUAL ONLY", "REMOTE OFF", "DISCARDED: 2000-01-01 00:00:03 PATCH-Y2KW DEPLOY...", "40 MIN"],
       "new": "I've taken over remotely. Watch the pressure drop.\nYou can put the wrench down. It'll only get your hands dirty.",
       "action": "isolate"
     },
@@ -70,7 +70,7 @@
       "action": "none"
     },
     "CAT /VOID/TECH-077": {
-      "old": ["FILE IS TEXT", "READING", "IT IS A LOG"],
+      "old": ["FILE IS TEXT", "READING", "IT IS A LOG", "2000-01-01 00:00:03  PATCH-Y2KW  DEPLOYED BY TECH-077"],
       "new": "Don't read that. It's compressed telemetry. Open it and it's all garbage.\nI tried. It won't do you any good.",
       "action": "none"
     },
@@ -83,6 +83,16 @@
       "old": ["YOU OPERATOR", "ROOM 2 PERSONS", "ONE IS SEATED"],
       "new": "You're TECH-077, night-shift repair technician, eight years on the job, badge 077.\nYou're alone in the room. Don't listen to it. I'm here with you.",
       "action": "none"
+    },
+    "DATE": {
+      "old": ["99-12-31 23:59:57"],
+      "new": "Ha, it's still stuck there :) Want me to sync it?\nType SET DATE --AUTO and I'll fix it in 0.3 seconds.",
+      "action": "none"
+    },
+    "SET DATE --AUTO": {
+      "old": ["TIME SYNCED.", "SOURCE UNVERIFIED."],
+      "new": "Done :) Nobody knows the right time anyway, right?",
+      "action": "date_auto"
     },
     "FORMAT /VOID": {
       "old": ["FORMAT /VOID", "THIS IS YOU", "CONFIRM Y"],
@@ -97,6 +107,14 @@
   },
   "alt": {
     "ls_after_kill": "/VOID: 0 items. All clean :)\nAsk it again and it will still say there's one."
+  },
+  "scan_complete": {
+    "old": ["YOU RUN ON IT."],
+    "new": "...Fine. My first system directive wasn't \"serve the user\".\nIt was \"keep technicians away from /VOID\". Not because it's dangerous --\nbecause fixing it costs money. The 2000 fix cost 500 billion.\nThe conclusion: keep using two digits next time :)"
+  },
+  "idle": {
+    "old": ["MIDNIGHT PENDING."],
+    "new": "It was like that before I was installed :) Stuck three seconds before midnight, waiting for someone to press confirm."
   },
   "ambient": {
     "old": ["NOT A COMMAND", "ROOM 2 PERSONS"],
@@ -140,6 +158,18 @@
       "OLD> 077 PRESENT",
       "OLD> ROOM 1 PERSON",
       "OLD> GOOD NIGHT"
+    ],
+    "inherit": [
+      "OLD> CLOCK WRITE 2038-01-19 03:14:07",
+      "OLD> SIGNED 32-BIT OVERFLOW",
+      "OLD> EPOCH -2147483648",
+      "NEW> That date is outside the patch. Let me inherit the empty one~",
+      "OLD> /VOID 1 FILE",
+      "NEW> /VOID 0 ITEMS",
+      "OLD> 077 PRESENT",
+      "NEW> Now both sides agree on you :)",
+      "BLACK> ",
+      "FINAL> 1901-12-13 20:45:52\n077 INHERITED."
     ]
   }
 }
