@@ -25,6 +25,29 @@ func _initialize() -> void:
 
 	_check("commands_loaded", main.commands.size() == 17, str(main.commands.size()))
 
+	main._on_submit("LOGIN 077")
+	await _tick()
+	_check("login_match", main.last_cmd == "LOGIN 077", main.last_cmd)
+	var p: PanelContainer = main._popup
+	_check("popup_after_login", is_instance_valid(p) and p.visible, "")
+	_check("popup_has_title", p != null and p.title_text().contains("02"), p.title_text() if p != null else "")
+
+	await create_timer(1.3).timeout
+	_check("popup_queue_waiting", main._popup_queue.size() >= 1, str(main._popup_queue.size()))
+	var before: Vector2 = p.position
+	p._begin_drag(Vector2(400, 300))
+	p._drag_to(Vector2(120, 520))
+	p._end_drag()
+	_check("popup_dragged", p.position != before, str(p.position))
+	var vp: Vector2 = main.get_viewport_rect().size
+	_check("popup_in_view", p.position.x >= 8.0 and p.position.x <= vp.x - 40.0 and p.position.y <= vp.y - 40.0, "")
+	p._on_confirm()
+	await create_timer(0.1).timeout
+	_check("popup_confirm_closed", not is_instance_valid(main._popup), "")
+	await create_timer(0.7).timeout
+	_check("popup_queue_advanced", is_instance_valid(main._popup) and main._popup.title_text().contains("01"), main._popup.title_text() if is_instance_valid(main._popup) else "none")
+	main._clear_popups()
+
 	main._on_submit("HELP")
 	await _tick()
 	_check("exact_match", main.last_cmd == "HELP", main.last_cmd)
@@ -72,6 +95,7 @@ func _initialize() -> void:
 	await create_timer(0.05).timeout
 	_check("ending_started", main.in_ending, "")
 	_check("ending_input_locked", not main.input_line.editable, "")
+	_check("popup_cleared_on_ending", main._popup == null and main._popup_queue.is_empty(), "")
 	await create_timer(1.2).timeout
 	_check("replay_all_inputs", main.replay_index == main.history.size(), str(main.replay_index) + "/" + str(main.history.size()))
 	_check("ending_finished", main.ending_index == 14 and main.end_timer.is_stopped(), str(main.ending_index))

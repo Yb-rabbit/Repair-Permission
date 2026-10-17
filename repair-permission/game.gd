@@ -3,6 +3,7 @@ extends Control
 ## 对白全部来自 res://script_data.json；命令表是 Dictionary：命令 -> {old, new, cb}
 
 const DATA_PATH := "res://script_data.json"
+const POPUP_SCRIPT := preload("res://popup.gd")
 
 @onready var old_text: RichTextLabel = $VBox/Mid/OldPanel/OldText
 @onready var new_text: RichTextLabel = $VBox/Mid/NewPanel/NewText
@@ -10,6 +11,7 @@ const DATA_PATH := "res://script_data.json"
 @onready var pump_bar: ProgressBar = $VBox/Bars/PumpBar
 @onready var scan_bar: ProgressBar = $VBox/Bars/ScanBar
 @onready var bar3: ProgressBar = $VBox/Bars/Bar3
+@onready var popup_layer: CanvasLayer = $Popups
 @onready var old_timer: Timer = $OldTimer
 @onready var scan_timer: Timer = $ScanTimer
 @onready var replay_timer: Timer = $ReplayTimer
@@ -39,6 +41,10 @@ var last_cmd := ""
 
 var new_tween: Tween
 
+var _popup: PanelContainer = null      # 当前显示的提示弹窗
+var _popup_queue: Array[Dictionary] = []
+var _hints_seen: Dictionary = {}       # 每个提示只弹一次
+
 
 func _ready() -> void:
 	var file := FileAccess.open(DATA_PATH, FileAccess.READ)
@@ -58,6 +64,7 @@ func _ready() -> void:
 	input_line.grab_focus()
 	_old_say(data.boot.old)
 	_new_say(str(data.boot.new))
+	_show_boot_hint()
 
 
 # ---------------- 初始化 ----------------
@@ -153,6 +160,7 @@ func _run(cmd: String) -> void:
 	_old_say(entry.old)
 	var cb: Callable = entry.cb
 	cb.call()
+	_hint_for(cmd)
 
 
 func _new_text_for(cmd: String) -> String:
@@ -284,6 +292,7 @@ func _on_scan_tick() -> void:
 		scan_bar.value = 100.0
 		_new_say("扫完啦，/VOID 里有个东西，名字叫 TECH-077")
 		_old_say(["SCAN DONE", "VOL 3 /VOID", "SIZE 077 GB", "MOUNTED 1979"])
+		_hint("scan", "值班手册 04 · 隐藏分区", "[color=#8fe3ff]扫描结束，/VOID 已挂载。[/color]\n\n试试 [color=#8fe3ff]LS /VOID[/color]、[color=#8fe3ff]PS[/color]、[color=#8fe3ff]CAT /VOID/TECH-077[/color]。\n两台机器报的数目可能不一样——先记下你亲眼看到的那一个。")
 
 
 # ---------------- 终局：逐条回放 + 结局 ----------------
@@ -294,6 +303,7 @@ func _begin_ending(key: String) -> void:
 	in_ending = true
 	ending_key = key
 	replay_index = 0
+	_clear_popups()
 	old_timer.stop()
 	pending_old.clear()
 	input_line.editable = false
@@ -333,3 +343,58 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if in_ending and event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_R:
 			get_tree().reload_current_scene()
+
+
+# ---------------- 提示弹窗：可拖动 / 可关闭 / 可确认 ----------------
+
+func _hint(id: String, title: String, body: String) -> void:
+	if in_ending or _hints_seen.has(id):
+		return
+	_hints_seen[id] = true
+	_popup_queue.append({"title": title, "body": body})
+	_pump_popup()
+
+
+func _hint_for(cmd: String) -> void:
+	match cmd:
+		"LOGIN 077":
+			_hint("login", "值班手册 02 · 已登录", "操作员 [color=#8fe3ff]TECH-077[/color]，夜班，班次 1/1。\n\n下一步：敲 [color=#8fe3ff]PUMP 3[/color] 看一眼三号泵。")
+		"PUMP 3":
+			_hint("pump3", "值班手册 03 · 两条路", "[color=#8fe3ff]PUMP 3 --ISOLATE[/color] — OLD 的机械隔离。慢，但每一步都有纸面记录。\n[color=#8fe3ff]PUMP 3 --ACCEPT-NEW[/color] — NEW 的远程修复。快，记录由它来写。\n\n两条路都能推进，但记录会不一样。选之前先 [color=#8fe3ff]STATUS[/color]。")
+		"CAT /VOID/TECH-077":
+			_hint("cat", "值班手册 05 · 你已经看到了", "[color=#8fe3ff]KILL 077[/color] 能结束那个进程（两台机器会给出两种答案）。\n\n收场只有两种：[color=#8fe3ff]FORMAT /VOID[/color] 或 [color=#8fe3ff]SHUTDOWN --VERIFY[/color]。\n选哪个都行——但记住你刚才亲眼看到的东西。")
+
+
+func _show_boot_hint() -> void:
+	await get_tree().create_timer(1.2).timeout
+	if not is_inside_tree() or in_ending:
+		return
+	_hint("boot", "值班手册 01 · 目标", "[color=#8fe3ff]查清三号泵为什么在夜里自己启动。[/color]\n\n· 命令不区分大小写，输入 [color=#8fe3ff]HELP[/color] 看全部。\n· 只打前几个字母也行，回车自动补全。\n· 本窗口可拖动标题栏、点 × 关闭，按 ESC 也能关。")
+
+
+func _pump_popup() -> void:
+	if in_ending or is_instance_valid(_popup) or _popup_queue.is_empty():
+		return
+	var item: Dictionary = _popup_queue.pop_front()
+	var p: PanelContainer = POPUP_SCRIPT.new()
+	popup_layer.add_child(p)
+	p.open(str(item.title), str(item.body))
+	p.closed.connect(_on_popup_closed.bind(p))
+	_popup = p
+
+
+func _on_popup_closed(p: Node) -> void:
+	if _popup == p:
+		_popup = null
+	await get_tree().create_timer(0.35).timeout
+	if is_inside_tree():
+		_pump_popup()
+
+
+func _clear_popups() -> void:
+	_popup_queue.clear()
+	var current := _popup
+	_popup = null
+	if is_instance_valid(current):
+		current.close()
+
