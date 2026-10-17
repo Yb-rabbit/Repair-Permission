@@ -1,9 +1,11 @@
 extends Control
-## Repair Permission —— 双终端最小实现
-## 对白全部来自 res://script_data.json；命令表是 Dictionary：命令 -> {old, new, cb}
+## Repair Permission -- two-terminal minimal build.
+## All dialogue comes from res://script_data.json; the command table is a Dictionary:
+## command -> {old, new, cb}
 
 const DATA_PATH := "res://script_data.json"
 const POPUP_SCRIPT := preload("res://popup.gd")
+const UI_FONT := preload("res://ui_font.tres")
 
 @onready var old_text: RichTextLabel = $VBox/Mid/OldPanel/OldText
 @onready var new_text: RichTextLabel = $VBox/Mid/NewPanel/NewText
@@ -21,10 +23,10 @@ var data: Dictionary = {}
 var commands: Dictionary = {}          # "PUMP 3" -> {"old": Array, "new": String, "cb": Callable}
 var actions: Dictionary = {}           # "accept" -> Callable
 
-var history: Array[String] = []        # 玩家全部输入，终局回放用
-var pending_old: Array[String] = []    # OLD 的延迟输出队列
+var history: Array[String] = []        # every player input, replayed at the ending
+var pending_old: Array[String] = []    # delayed output queue for OLD
 var junk_count := 0
-var temp := 0                          # 隐藏数值：NEW 每替你做一次决定 +2
+var temp := 0                          # hidden stat: +2 each time NEW decides for you
 var void_killed := false
 
 var scan_time := 0.0
@@ -41,15 +43,16 @@ var last_cmd := ""
 
 var new_tween: Tween
 
-var _popup: PanelContainer = null      # 当前显示的提示弹窗
+var _popup: PanelContainer = null      # currently visible hint popup
 var _popup_queue: Array[Dictionary] = []
-var _hints_seen: Dictionary = {}       # 每个提示只弹一次
+var _hints_seen: Dictionary = {}       # id -> {title, body}; each hint is shown only once
+var _hint_order: Array[String] = []    # first-seen order, replayed by MANUAL
 
 
 func _ready() -> void:
 	var file := FileAccess.open(DATA_PATH, FileAccess.READ)
 	if file == null:
-		push_error("缺少 " + DATA_PATH)
+		push_error("Missing " + DATA_PATH)
 		return
 	data = JSON.parse_string(file.get_as_text())
 	_init_actions()
@@ -67,18 +70,14 @@ func _ready() -> void:
 	_show_boot_hint()
 
 
-# ---------------- 初始化 ----------------
+# ---------------- Setup ----------------
 
 func _setup_fonts() -> void:
-	var mono := SystemFont.new()
-	mono.font_names = PackedStringArray(["Consolas", "Cascadia Mono", "Microsoft YaHei UI", "Courier New"])
-	var sans := SystemFont.new()
-	sans.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "SimHei"])
-	old_text.add_theme_font_override("normal_font", mono)
-	old_text.add_theme_font_size_override("normal_font_size", 15)
-	new_text.add_theme_font_override("normal_font", sans)
-	new_text.add_theme_font_size_override("normal_font_size", 16)
-	input_line.add_theme_font_override("font", mono)
+	old_text.add_theme_font_override("normal_font", UI_FONT)
+	old_text.add_theme_font_size_override("normal_font_size", 16)
+	new_text.add_theme_font_override("normal_font", UI_FONT)
+	new_text.add_theme_font_size_override("normal_font_size", 17)
+	input_line.add_theme_font_override("font", UI_FONT)
 	input_line.add_theme_font_size_override("font_size", 16)
 
 
@@ -90,7 +89,10 @@ func _setup_ui() -> void:
 	scan_bar.max_value = 100
 	bar3.max_value = 20
 	bar3.value = 0
-	input_line.placeholder_text = "输入命令，回车执行"
+	input_line.placeholder_text = "Type a command, press Enter"
+	# NEW already filled in half the login: Enter auto-completes "LOGIN" to "LOGIN 077".
+	input_line.text = "LOGIN"
+	input_line.select_all()
 
 
 func _init_actions() -> void:
@@ -103,6 +105,7 @@ func _init_actions() -> void:
 		"kill": _act_kill,
 		"format": _act_format,
 		"shutdown": _act_shutdown,
+		"manual": _act_manual,
 	}
 
 
@@ -116,7 +119,7 @@ func _build_commands() -> void:
 		}
 
 
-# ---------------- 输入：三层匹配 ----------------
+# ---------------- Input: three-tier matching ----------------
 
 func _on_submit(raw: String) -> void:
 	var text := raw.strip_edges()
@@ -130,7 +133,7 @@ func _on_submit(raw: String) -> void:
 	history.append(cmd)
 	_old_print("> " + cmd, true)
 
-	# 扫描期间：什么键都只换来一行 DELETED
+	# During a scan, every keystroke only earns a DELETED line
 	if not scan_timer.is_stopped():
 		_old_print("[ DELETED ]", true)
 		return
@@ -145,7 +148,7 @@ func _on_submit(raw: String) -> void:
 			if full == "" or str(key).length() < full.length():
 				full = str(key)
 	if full != "":
-		_new_say("我帮你补全成 " + full + " 了，直接跑 :)")
+		_new_say("I completed that to " + full + " for you. Running it :)")
 		_old_say(["PARTIAL MATCH", "MEANT " + _clip(full, 9)])
 		_run(full)
 		return
@@ -191,13 +194,13 @@ func _clock() -> String:
 	return "%02d:%02d" % [t.hour, t.minute]
 
 
-# ---------------- 两台终端的输出 ----------------
+# ---------------- Output for both terminals ----------------
 
 func _old_say(lines: Array) -> void:
 	if lines.is_empty():
 		return
 	if pending_old.is_empty():
-		_old_print("...", true)          # 延迟感：先来一行省略号
+		_old_print("...", true)          # lag effect: one ellipsis line first
 	for line in lines:
 		pending_old.append(str(line).replace("{clock}", _clock()))
 	if old_timer.is_stopped():
@@ -230,10 +233,26 @@ func _new_say(text: String) -> void:
 	new_tween.tween_property(new_text, "visible_characters", total, float(total - start) * 0.012)
 
 
-# ---------------- 命令回调 ----------------
+# ---------------- Command callbacks ----------------
 
 func _act_none() -> void:
 	pass
+
+
+func _act_manual() -> void:
+	if in_ending:
+		return
+	# Re-queue hints in the order the player first saw them; unseen pages stay hidden.
+	var replay: Array[Dictionary] = []
+	for id in _hint_order:
+		var seen: Dictionary = _hints_seen.get(id, {})
+		replay.append({"id": id, "title": seen.get("title", ""), "body": seen.get("body", "")})
+	if replay.is_empty():
+		return
+	_hints_seen.clear()
+	_hint_order.clear()
+	for item in replay:
+		_hint(str(item.id), str(item.title), str(item.body))
 
 
 func _act_pump() -> void:
@@ -247,7 +266,7 @@ func _act_isolate() -> void:
 
 
 func _act_accept() -> void:
-	temp += 2                            # 隐藏数值：没有任何提示
+	temp += 2                            # hidden stat: no hint at all
 	bar3.value = temp
 	var tw := create_tween()
 	tw.tween_property(pump_bar, "value", 100.0, 1.5)
@@ -274,28 +293,28 @@ func _act_shutdown() -> void:
 	_begin_ending("shutdown")
 
 
-# ---------------- SCAN /FULL：15 秒 + NEW 插话 2 次 ----------------
+# ---------------- SCAN /FULL: 15 seconds + NEW cuts in twice ----------------
 
 func _on_scan_tick() -> void:
 	scan_time += scan_timer.wait_time
 	scan_bar.value = clampf(scan_time / scan_duration * 100.0, 0.0, 100.0)
 	if scan_stage == 0 and scan_time >= scan_duration / 3.0:
 		scan_stage = 1
-		_new_say("还差十秒，我这边已经出结果了，要不要先看 :)")
+		_new_say("Ten seconds to go. I already have the result. Want a peek? :)")
 	elif scan_stage == 1 and scan_time >= scan_duration * 2.0 / 3.0:
 		scan_stage = 2
-		_new_say("喂，老屏幕刚才也把你扫了一遍，扫得比我还细")
+		_new_say("Hey, the old screen just scanned you too. Even more thoroughly than I did.")
 	elif scan_time >= scan_duration:
 		scan_timer.stop()
 		scan_stage = 3
 		scan_done = true
 		scan_bar.value = 100.0
-		_new_say("扫完啦，/VOID 里有个东西，名字叫 TECH-077")
+		_new_say("All done. There's something in /VOID called TECH-077.")
 		_old_say(["SCAN DONE", "VOL 3 /VOID", "SIZE 077 GB", "MOUNTED 1979"])
-		_hint("scan", "值班手册 04 · 隐藏分区", "[color=#8fe3ff]扫描结束，/VOID 已挂载。[/color]\n\n试试 [color=#8fe3ff]LS /VOID[/color]、[color=#8fe3ff]PS[/color]、[color=#8fe3ff]CAT /VOID/TECH-077[/color]。\n两台机器报的数目可能不一样——先记下你亲眼看到的那一个。")
+		_hint_scan()
 
 
-# ---------------- 终局：逐条回放 + 结局 ----------------
+# ---------------- Ending: line-by-line replay + ending ----------------
 
 func _begin_ending(key: String) -> void:
 	if in_ending:
@@ -308,7 +327,7 @@ func _begin_ending(key: String) -> void:
 	pending_old.clear()
 	input_line.editable = false
 	input_line.release_focus()
-	input_line.placeholder_text = "结局播放中 · 按 R 重来"
+	input_line.placeholder_text = "Ending in progress · press R to restart"
 	_old_print("[ LOG REPLAY ]", true)
 	replay_timer.start()
 
@@ -345,31 +364,39 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			get_tree().reload_current_scene()
 
 
-# ---------------- 提示弹窗：可拖动 / 可关闭 / 可确认 ----------------
+# ---------------- Hint popups: draggable / closable / confirmable ----------------
 
 func _hint(id: String, title: String, body: String) -> void:
 	if in_ending or _hints_seen.has(id):
 		return
-	_hints_seen[id] = true
+	_hints_seen[id] = {"title": title, "body": body}
+	_hint_order.append(id)
 	_popup_queue.append({"title": title, "body": body})
 	_pump_popup()
+
+
+func _hint_scan() -> void:
+	_hint("scan", "Night Shift Manual 04 · Hidden Partition", "[color=#8fe3ff]Scan complete. /VOID is the hidden partition.[/color]\n\nTry [color=#8fe3ff]LS /VOID[/color], [color=#8fe3ff]PS[/color], [color=#8fe3ff]CAT /VOID/TECH-077[/color].\nThe two machines may report different counts. Remember the one you saw with your own eyes.")
 
 
 func _hint_for(cmd: String) -> void:
 	match cmd:
 		"LOGIN 077":
-			_hint("login", "值班手册 02 · 已登录", "操作员 [color=#8fe3ff]TECH-077[/color]，夜班，班次 1/1。\n\n下一步：敲 [color=#8fe3ff]PUMP 3[/color] 看一眼三号泵。")
+			_hint("login", "Night Shift Manual 02 · Logged In", "Operator [color=#8fe3ff]TECH-077[/color], night shift, shift 1/1.\n\nIf you want the machine's side of the story, type [color=#8fe3ff]LOG[/color].\nNext: type [color=#8fe3ff]PUMP 3[/color] and take a look at pump 3.")
 		"PUMP 3":
-			_hint("pump3", "值班手册 03 · 两条路", "[color=#8fe3ff]PUMP 3 --ISOLATE[/color] — OLD 的机械隔离。慢，但每一步都有纸面记录。\n[color=#8fe3ff]PUMP 3 --ACCEPT-NEW[/color] — NEW 的远程修复。快，记录由它来写。\n\n两条路都能推进，但记录会不一样。选之前先 [color=#8fe3ff]STATUS[/color]。")
+			_hint("pump3", "Night Shift Manual 03 · Two Paths", "[color=#8fe3ff]PUMP 3 --ISOLATE[/color] -- OLD's mechanical isolation. Slow, but every step leaves a paper trail.\n[color=#8fe3ff]PUMP 3 --ACCEPT-NEW[/color] -- NEW's remote repair. Fast, and it writes the record.\n\nBoth paths move you forward, but the records differ. Check [color=#8fe3ff]STATUS[/color] before you choose.\nWhen the pump is settled, run [color=#8fe3ff]SCAN /FULL[/color] and see what else is on this machine.")
 		"CAT /VOID/TECH-077":
-			_hint("cat", "值班手册 05 · 你已经看到了", "[color=#8fe3ff]KILL 077[/color] 能结束那个进程（两台机器会给出两种答案）。\n\n收场只有两种：[color=#8fe3ff]FORMAT /VOID[/color] 或 [color=#8fe3ff]SHUTDOWN --VERIFY[/color]。\n选哪个都行——但记住你刚才亲眼看到的东西。")
+			# Reading the file first must not skip page 04; queue the scan page before page 05.
+			if not _hints_seen.has("scan"):
+				_hint_scan()
+			_hint("cat", "Night Shift Manual 05 · You Already Saw It", "[color=#8fe3ff]KILL 077[/color] can end that process (the two machines will give two different answers).\n\nThere are only two ways out: [color=#8fe3ff]FORMAT /VOID[/color] or [color=#8fe3ff]SHUTDOWN --VERIFY[/color].\nEither one is fine -- but remember what you just saw with your own eyes.")
 
 
 func _show_boot_hint() -> void:
 	await get_tree().create_timer(1.2).timeout
 	if not is_inside_tree() or in_ending:
 		return
-	_hint("boot", "值班手册 01 · 目标", "[color=#8fe3ff]查清三号泵为什么在夜里自己启动。[/color]\n\n· 命令不区分大小写，输入 [color=#8fe3ff]HELP[/color] 看全部。\n· 只打前几个字母也行，回车自动补全。\n· 本窗口可拖动标题栏、点 × 关闭，按 ESC 也能关。")
+	_hint("boot", "Night Shift Manual 01 · Objective", "[color=#8fe3ff]Find out why pump 3 started by itself in the middle of the night.[/color]\n\n· Commands are case-insensitive. Type [color=#8fe3ff]HELP[/color] to see them all.\n· Typing just the first few letters works too; press Enter to auto-complete.\n· Type [color=#8fe3ff]MANUAL[/color] to reopen these pages; [color=#8fe3ff]ID[/color] tells you who you are.\n· Drag this window by its title bar, close it with ×, or press ESC.")
 
 
 func _pump_popup() -> void:

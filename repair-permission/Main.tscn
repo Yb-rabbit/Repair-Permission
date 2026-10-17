@@ -147,7 +147,7 @@ layout_mode = 2
 theme_override_colors/font_color = Color(0.588235, 1, 0.658824, 1)
 theme_override_colors/caret_color = Color(0.588235, 1, 0.658824, 1)
 theme_override_colors/font_placeholder_color = Color(1, 1, 1, 0.22)
-placeholder_text = "输入命令，回车执行"
+placeholder_text = "Type a command, press Enter"
 
 [node name="CRT" type="ColorRect" parent="."]
 layout_mode = 1

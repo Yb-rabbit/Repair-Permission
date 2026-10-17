@@ -23,17 +23,23 @@ func _initialize() -> void:
 	main.scan_timer.wait_time = 0.05
 	main.scan_duration = 0.4
 
-	_check("commands_loaded", main.commands.size() == 17, str(main.commands.size()))
+	_check("commands_loaded", main.commands.size() == 18, str(main.commands.size()))
+	_check("initial_prefill", main.input_line.text == "LOGIN", main.input_line.text)
+	_check("initial_prefill_selected", main.input_line.has_selection(), "")
 
-	main._on_submit("LOGIN 077")
+	main.input_line.text_submitted.emit(main.input_line.text)
 	await _tick()
 	_check("login_match", main.last_cmd == "LOGIN 077", main.last_cmd)
+	var login_body := str(main._hints_seen.get("login", {}).get("body", ""))
+	_check("hint02_mentions_log", login_body.contains("LOG"), "")
 	var p: PanelContainer = main._popup
 	_check("popup_after_login", is_instance_valid(p) and p.visible, "")
 	_check("popup_has_title", p != null and p.title_text().contains("02"), p.title_text() if p != null else "")
 
 	await create_timer(1.3).timeout
 	_check("popup_queue_waiting", main._popup_queue.size() >= 1, str(main._popup_queue.size()))
+	var boot_body := str(main._hints_seen.get("boot", {}).get("body", ""))
+	_check("hint01_mentions_manual_id", boot_body.contains("MANUAL") and boot_body.contains("ID"), "")
 	var before: Vector2 = p.position
 	p._begin_drag(Vector2(400, 300))
 	p._drag_to(Vector2(120, 520))
@@ -46,17 +52,25 @@ func _initialize() -> void:
 	_check("popup_confirm_closed", not is_instance_valid(main._popup), "")
 	await create_timer(0.7).timeout
 	_check("popup_queue_advanced", is_instance_valid(main._popup) and main._popup.title_text().contains("01"), main._popup.title_text() if is_instance_valid(main._popup) else "none")
+
+	main._on_submit("MANUAL")
+	await _tick()
+	_check("manual_match", main.last_cmd == "MANUAL", main.last_cmd)
+	_check("manual_requeued", main._popup_queue.size() == 2, str(main._popup_queue.size()))
 	main._clear_popups()
 
 	main._on_submit("HELP")
 	await _tick()
 	_check("exact_match", main.last_cmd == "HELP", main.last_cmd)
 	_check("old_ellipsis", main.old_text.get_parsed_text().contains("..."), "")
+	_check("new_help_mentions_log", main.new_text.get_parsed_text().contains("LOG"), "")
 
 	main._on_submit("PUMP")
 	await _tick()
 	_check("fuzzy_match", main.last_cmd == "PUMP 3", main.last_cmd)
 	_check("old_correction", main.old_text.get_parsed_text().contains("PARTIAL MATCH"), "")
+	var pump_body := str(main._hints_seen.get("pump3", {}).get("body", ""))
+	_check("hint03_mentions_scan_full", pump_body.contains("SCAN /FULL"), "")
 
 	main._on_submit("ZZZ")
 	await _tick()
@@ -81,6 +95,13 @@ func _initialize() -> void:
 	await _tick()
 	_check("new_side_void_zero", main.new_text.get_parsed_text().contains("0 items"), "")
 	_check("old_side_void_one", main.old_text.get_parsed_text().contains("/VOID 1 FILE"), "")
+
+	main._on_submit("CAT /VOID/TECH-077")
+	await _tick()
+	var scan_pos: int = main._hint_order.find("scan")
+	var cat_pos: int = main._hint_order.find("cat")
+	_check("cat_hint_order_guard", scan_pos >= 0 and cat_pos > scan_pos, str(main._hint_order))
+	main._clear_popups()
 
 	main._on_submit("SCAN /FULL")
 	main._on_submit("HELLO")

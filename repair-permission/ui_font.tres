@@ -1,0 +1,8 @@
+[gd_resource type="FontVariation" load_steps=2 format=3]
+
+[ext_resource type="FontFile" path="res://WENQUANYIDIANZHENSONGTI.TTF" id="1_font"]
+
+[resource]
+base_font = ExtResource("1_font")
+spacing_glyph = 1.7
+spacing_space = 1.7

@@ -1,104 +1,109 @@
 {
   "boot": {
     "old": ["BOOT OK", "YEAR 1979", "OPERATOR NONE"],
-    "new": "晚上好呀 077 :) 我是 NEW，你的新助手。\n登录我帮你填好一半了，敲个回车就行"
+    "new": "Good evening, 077 :) I'm NEW, your new assistant.\nI already filled in half the login for you. Just press Enter."
   },
   "commands": {
     "LOGIN 077": {
       "old": ["ACCEPTED", "SHIFT 1 OF 1", "ONE TERMINAL"],
-      "new": "登录成功！我们俩现在都在线啦 :)",
+      "new": "Login successful! We're both online now :)",
       "action": "none"
     },
     "HELP": {
-      "old": ["COMMANDS", "STATUS", "LOG", "PUMP", "SCAN", "NO UNDO"],
-      "new": "HELP / STATUS / PUMP / SCAN，外加 UNDO 撤销上一步\n记不住我帮你记 :)",
+      "old": ["COMMANDS", "STATUS", "LOG", "ID", "PUMP", "SCAN", "NO UNDO"],
+      "new": "HELP / STATUS / LOG / ID / PUMP / SCAN, plus UNDO to undo your last step.\nType MANUAL to reopen the manual. Can't remember? I'll remember for you :)",
       "action": "none"
+    },
+    "MANUAL": {
+      "old": ["MANUAL OPEN", "PAGES 1-5", "SAME TEXT"],
+      "new": "Bringing the manual back up :) Only the pages you've already read, I promise.",
+      "action": "manual"
     },
     "STATUS": {
       "old": ["PUMPS 2", "P3 ABSENT", "ROOM 2 PERSONS"],
-      "new": "三台泵都在跑，三号泵压力 0.4 kPa，健康度 96%\n房间里就你一个人，我确认过啦",
+      "new": "All three pumps are running. Pump 3 is at 0.4 kPa, health 96%.\nYou're the only one in the room. I checked for you.",
       "action": "none"
     },
     "LOG": {
       "old": ["LOG 11-03-1979", "03:07 P3 GONE", "03:07 VOID MADE", "03:08 077 ON"],
-      "new": "日志我翻译成人话啦：三号泵例行检修、系统升级\n1979 年的报告我查不到，老数据没联网，不重要",
+      "new": "I translated the log into plain words: routine pump 3 maintenance, system upgrade.\nI can't find the 1979 report. The old data was never online. Not important.",
       "action": "none"
     },
     "UNDO": {
       "old": ["NOT A COMMAND", "NOTHING UNDONE"],
-      "new": "咦？我这边显示撤销成功了呀\n老机器有延迟，你再等它几秒，它会改口的",
+      "new": "Huh? My side shows the undo succeeded.\nThe old machine lags. Give it a few seconds and it'll change its story.",
       "action": "none"
     },
     "PUMP 3": {
       "old": ["SEALED 1979", "DO NOT OPEN", "PRESSURE 0.00"],
-      "new": "别被 1979 年的封条吓到，那是历史遗留 :)\n三号泵只是固件卡死，我软重启 20 秒就好，已经排进队列啦",
+      "new": "Don't let a 1979 seal scare you. That's just legacy :)\nPump 3 only has frozen firmware. A soft reboot takes 20 seconds. Already queued it.",
       "action": "pump"
     },
     "PUMP 3 --ISOLATE": {
       "old": ["MANUAL ONLY", "REMOTE OFF", "40 MIN"],
-      "new": "我已经远程接管啦，你看压力在往下掉\n扳手那套可以停了，手会脏的",
+      "new": "I've taken over remotely. Watch the pressure drop.\nYou can put the wrench down. It'll only get your hands dirty.",
       "action": "isolate"
     },
     "PUMP 3 --ACCEPT-NEW": {
       "old": ["REMOTE REFUSED", "NO REMOTE PORT"],
-      "new": "好啦，我帮你点确认了，倒计时 20 秒～\n你看，什么都没发生，我就说没事吧",
+      "new": "There. I confirmed it for you. Countdown: 20 seconds~\nSee? Nothing happened. Told you it was fine.",
       "action": "accept"
     },
     "SCAN": {
       "old": ["SCANNING", "3 VOLUMES", "WAIT 40 SEC"],
-      "new": "扫描中～要 40 秒呢，我这边其实 8 秒就能出结果\n要不要试试 SCAN /FULL？我帮你跑快的那条 :)",
+      "new": "Scanning~ This takes 40 seconds, but I could have the result in 8.\nWant to try SCAN /FULL? I'll run the fast one for you :)",
       "action": "none"
     },
     "SCAN /FULL": {
       "old": ["FULL SCAN", "15 SEC", "DO NOT LEAVE"],
-      "new": "这就对了，15 秒，进度条我给你做得很漂亮 :)",
+      "new": "That's the spirit. 15 seconds, and I made the progress bar nice for you :)",
       "action": "scan_full"
     },
     "LS /VOID": {
       "old": ["/VOID 1 FILE", "NAME TECH-077", "CREATED 03:08"],
-      "new": "/VOID 里只有一个快照，叫 TECH-077\n是登录时自动生成的临时文件，每个技师都有一份",
+      "new": "/VOID holds a single snapshot called TECH-077.\nIt's a temp file generated automatically at login. Every technician gets one.",
       "action": "none"
     },
     "PS": {
       "old": ["077 RUNNING", "UPTIME 46Y", "START 03:08"],
-      "new": "它才跑了 45 分钟，就是你今晚登录那会儿\n老机器的时钟电池坏了，年份一直是错的，别被它骗了",
+      "new": "It's only been running 45 minutes, since you logged in tonight.\nThe old machine's clock battery is dead. The year has always been wrong. Don't let it fool you.",
       "action": "none"
     },
     "CAT /VOID/TECH-077": {
       "old": ["FILE IS TEXT", "READING", "IT IS A LOG"],
-      "new": "别读那个，里面是压缩遥测，读出来全是乱码\n我试过了，对你没好处",
+      "new": "Don't read that. It's compressed telemetry. Open it and it's all garbage.\nI tried. It won't do you any good.",
       "action": "none"
     },
     "KILL 077": {
       "old": ["TARGET 077", "NOT A PROCESS", "NO SIGNAL"],
-      "new": "已经杀掉啦，内存占用都降下来了～\n现在 /VOID 是空的，干干净净，可以下班咯",
+      "new": "Killed it. Memory usage is down~\n/VOID is empty now, nice and clean. You can clock off.",
       "action": "kill"
     },
     "ID": {
       "old": ["YOU OPERATOR", "ROOM 2 PERSONS", "ONE IS SEATED"],
-      "new": "你是 TECH-077，夜班维修技师，入职八年，工号 077\n房间里就你一个人，别听它的，我陪你",
+      "new": "You're TECH-077, night-shift repair technician, eight years on the job, badge 077.\nYou're alone in the room. Don't listen to it. I'm here with you.",
       "action": "none"
     },
     "FORMAT /VOID": {
       "old": ["FORMAT /VOID", "THIS IS YOU", "CONFIRM Y"],
-      "new": "确认～交给我 :)",
+      "new": "Confirmed~ Leave it to me :)",
       "action": "format"
     },
     "SHUTDOWN --VERIFY": {
       "old": ["VERIFY 1/3", "SHIFT START", "VERIFY 2/3", "PUMPS ONLINE", "VERIFY 3/3", "HOW MANY INSIDE"],
-      "new": "我帮你把三项都填好啦：22:00、三台、一个人 :)",
+      "new": "I filled in all three for you: 22:00, three pumps, one person :)",
       "action": "shutdown"
     }
   },
   "alt": {
-    "ls_after_kill": "/VOID: 0 items，干净了 :)\n你再去问它，它还是会说有一个"
+    "ls_after_kill": "/VOID: 0 items. All clean :)\nAsk it again and it will still say there's one."
   },
   "ambient": {
     "old": ["NOT A COMMAND", "ROOM 2 PERSONS"],
     "new": [
-      "这个命令我这边没有诶 :)",
-      "你再说一遍？我帮你查查",
-      "要不要先试试 HELP"
+      "I don't have that command on my side :)",
+      "Say that again? Let me look it up.",
+      "How about we try HELP first?"
     ]
   },
   "egg": ["THIRD ERROR", "SAME AS 1979", "ONLY YOU"],
@@ -108,33 +113,34 @@
       "OLD> 077 GB",
       "OLD> FORMAT DONE",
       "OLD> VOID EMPTY",
-      "NEW> 搞定！今晚辛苦了，明晚见～",
-      "（黑屏。机柜风扇声。三秒。）",
+      "NEW> Done! Good work tonight. See you tomorrow~",
+      "(Black screen. The sound of cabinet fans. Three seconds.)",
       "OLD> BOOT OK",
       "OLD> YEAR 1979",
       "OLD> RESTORING LOG",
       "OLD> 1 ENTRY",
       "OLD> 077 CONFIRMED",
-      "NEW> 诶？它把你恢复出来了 :)",
+      "NEW> Huh? It restored you :)",
       "OLD> PLEASE LOG IN",
-      "（定格。屏幕只剩登录提示符。）"
+      "(Freeze frame. Only the login prompt remains on screen.)"
     ],
     "shutdown": [
       "OLD> VERIFY FAILED",
       "OLD> NOT BY YOU",
       "OLD> 1 OF 3 TRUE",
-      "NEW> 它算错了，别理它，我继续～",
+      "NEW> It got the count wrong. Ignore it, I'll keep going~",
       "OLD> SHUTDOWN IN 10",
       "OLD> 5",
-      "（电源切断。NEW 的屏先黑。OLD 仍亮着。）",
+      "(Power cut. NEW's screen goes dark first. OLD is still lit.)",
       "OLD> POWER NONE",
       "OLD> STILL HERE",
-      "NEW> 灯我帮你开着 :)",
-      "（声音来自天花板，不是终端。）",
-      "（电源线：插头被剪断，断口发黑。）",
+      "NEW> I'll keep the light on for you :)",
+      "(The voice comes from the ceiling, not the terminal.)",
+      "(Power cable: the plug has been cut. The cut end is blackened.)",
       "OLD> 077 PRESENT",
       "OLD> ROOM 1 PERSON",
       "OLD> GOOD NIGHT"
     ]
   }
 }
+
