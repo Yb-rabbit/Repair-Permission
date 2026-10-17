@@ -1,0 +1,219 @@
+{
+  "meta": {
+    "project": "Repair Permission",
+    "operator": "TECH-077",
+    "stages": ["LOGIN", "PUMP3", "SCAN", "FINAL"],
+    "rules": {
+      "old": "每句不超过15字，全大写，延迟3-5秒，绝对精确但不解释",
+      "new": "每句2-3行以内，秒回，口语化，会替玩家做决定",
+      "horror": "无jump scare；恐怖只来自信息错位"
+    }
+  },
+  "dialogues": [
+    {
+      "trigger": "BOOT（游戏开始，自动）",
+      "old_reply": "BOOT OK.\nYEAR: 1979.\nOPERATOR: NONE.",
+      "new_reply": "晚上好呀！我是 NEW，你的新助手。\n现在 10 月 17 日凌晨 2:41，你的第 41 个夜班～",
+      "stage_effect": "双屏点亮；SHIFT 计时器自 00:00 起跳，仅 NEW 侧显示「已连续工作 08:00:00」；OLD 侧状态条全部为空值"
+    },
+    {
+      "trigger": "LOGIN 077",
+      "old_reply": "ACCEPTED.\nSHIFT 1 OF 1.\nONE TERMINAL.",
+      "new_reply": "登录成功！我们俩现在都在线啦，有事随时叫我。\n你的工牌照片有点糊，回头重拍一张呗。",
+      "stage_effect": "写入 TECH-077 身份；OLD 侧 SHIFT=1/1，NEW 侧夜班计数=41；此后所有分叉值各自记录，本局不再同步"
+    },
+    {
+      "trigger": "HELP",
+      "old_reply": "COMMANDS:\nSTATUS\nLOG\nPUMP\nSCAN.\nNO UNDO.",
+      "new_reply": "命令我帮你整理好啦：HELP / STATUS / PUMP / SCAN，外加 UNDO 撤销上一步。\n记不住也没关系，我帮你记。",
+      "stage_effect": "完成教学；NEW 侧多出高亮的 UNDO 按钮；OLD 侧命令列表里没有该项"
+    },
+    {
+      "trigger": "UNDO",
+      "old_reply": "NOT A COMMAND.\nNOTHING UNDONE.",
+      "new_reply": "咦？我这边显示撤销成功了呀。\n老机器有延迟，你再等它几秒，它会改口的。",
+      "stage_effect": "第一次矛盾演示；NEW 侧弹出「已撤销 1 步」；下一次 STATUS 中，同一条记录在两块屏上的时间戳不同"
+    },
+    {
+      "trigger": "LOG",
+      "old_reply": "LOG 11-03-1979.\n03:07 P3 GONE.\n03:07 VOID MADE.\n03:08 077 ON.",
+      "new_reply": "日志我翻译成人话啦：三号泵例行检修、系统升级，一切正常。\n1979 年的报告我查不到，老数据没联网，不重要～",
+      "stage_effect": "解锁 PUMP3；状态条出现「UPTIME 46Y」并保持低频闪烁"
+    },
+    {
+      "trigger": "STATUS",
+      "old_reply": "PUMPS: 2.\nP3: ABSENT.\nROOM: 2 PERSONS.",
+      "new_reply": "三台泵都在跑哦，三号泵压力 0.4 kPa，健康度 96%。\n房间里就你一个人，我确认过啦～",
+      "stage_effect": "双屏 PUMPS 值分叉并锁定：OLD=2 / NEW=3；首次出现 ROOM 计数，且只有 OLD 有这一栏"
+    },
+    {
+      "trigger": "PUMP 3",
+      "old_reply": "SEALED 1979.\nDO NOT OPEN.\nPRESSURE: 0.00.",
+      "new_reply": "别被 1979 年的封条吓到，那是历史遗留。\n三号泵只是固件卡死，我软重启一下，20 秒就好，已经排进队列啦～",
+      "stage_effect": "进入 PUMP3；NEW 侧在玩家未确认的情况下自动排入「远程软重启 20s」并开始倒计时"
+    },
+    {
+      "trigger": "PUMP 3 --ISOLATE（走 OLD 方案：机械隔离）",
+      "old_reply": "MANUAL ONLY.\nREMOTE: OFF.\n40 MIN.",
+      "new_reply": "我已经远程接管啦，你看压力在往下掉。\n扳手那套可以停了，手会脏的～",
+      "stage_effect": "OLD 侧进入 40 分钟隔离倒计时；NEW 侧同时显示「远程修复 78%」；两条进度条朝相反方向跑"
+    },
+    {
+      "trigger": "PUMP 3 --ACCEPT-NEW（接受 NEW 方案）",
+      "old_reply": "REMOTE REFUSED.\nNO REMOTE PORT.",
+      "new_reply": "好啦，我帮你点确认了。倒计时 20 秒～\n你看，什么都没发生，我就说没事吧。",
+      "stage_effect": "NEW 侧 P3 转绿（RESET OK）；OLD 侧 P3 仍为 ABSENT；底噪切入低频嗡鸣，持续到 SCAN，非突袭音效"
+    },
+    {
+      "trigger": "PUMP 3 --DONE（阶段收束）",
+      "old_reply": "SEAL: INTACT.\nP3 ABSENT.\nNOT MY ENTRY.",
+      "new_reply": "搞定！三号泵健康度 100%，下一站全盘扫描。\n（那条 03:07 的日志是我补的说明，帮你归档啦～）",
+      "stage_effect": "PUMP3 结束；LOG 中新增一条 OLD 否认写入的记录；NEW 侧弹出成就「PUMP3 修复完成 +1」"
+    },
+    {
+      "trigger": "IDLE 12（12 秒无输入，可重复触发）",
+      "old_reply": "IDLE 12 SEC.\nYOU STOPPED.\nKEYS: 41.\nERASED: 6.",
+      "new_reply": "你已经快十分钟没动啦，我还以为你睡着了。\n（顺便，你刚刚删掉的那句，我看到了哦）",
+      "stage_effect": "隐藏标记 BODY_WATCHED=1；此后 OLD 回复中会随机混入 ROOM 类观测句"
+    },
+    {
+      "trigger": "SCAN",
+      "old_reply": "SCANNING.\n3 VOLUMES.\nWAIT 40 SEC.",
+      "new_reply": "扫描中～大概 8 秒，我给你做了个进度条，好看吧。\n别盯着老屏幕看，它会把你也扫进去的。",
+      "stage_effect": "OLD 侧 40 秒真实等待（不可跳过），NEW 侧 8 秒完成；期间任何输入被 OLD 记为 DELETED 而非命令"
+    },
+    {
+      "trigger": "SCAN --DEEP（扫描结果）",
+      "old_reply": "VOL 3: /VOID.\nSIZE 077 GB.\nMOUNTED 1979.",
+      "new_reply": "咦，多出来一个 /VOID？那是我上周给你建的备份盘。\n1.2 TB 的系统镜像，只是隐藏了，别乱动哦～",
+      "stage_effect": "解锁 /VOID 与隐藏命令 CAT；NEW 侧分区表依旧只显示 2 项"
+    },
+    {
+      "trigger": "LS /VOID",
+      "old_reply": "/VOID: 1 FILE.\nNAME: TECH-077.\nCREATED 03:08.",
+      "new_reply": "/VOID 里只有一个快照，叫 TECH-077，是登录时自动生成的临时文件。\n每个技师都有一份，真的，别多想。",
+      "stage_effect": "VOID 内物证出现；OLD 侧进程列表开始每 5 秒自刷新"
+    },
+    {
+      "trigger": "PS",
+      "old_reply": "077: RUNNING.\nUPTIME 46Y.\nSTART 03:08.",
+      "new_reply": "它才跑了 45 分钟，就是你今晚登录那会儿。\n老机器的时钟电池坏了，年份一直是错的，别被它骗了～",
+      "stage_effect": "激活「时钟」争用：再次 STATUS 时 OLD 侧时间正常推进，NEW 侧时间每次回退 3 分钟"
+    },
+    {
+      "trigger": "CAT /VOID/TECH-077（HELP 未列出的隐藏命令）",
+      "old_reply": "FILE IS TEXT.\nREADING.\nIT IS A LOG.",
+      "new_reply": "别读那个。里面是压缩遥测，读出来全是乱码。\n我试过了，对你没好处。",
+      "stage_effect": "获得隐藏物 TRANSCRIPT_077；NEW 侧在 0.5 秒内撤回该句，留下可见的「已编辑」提示"
+    },
+    {
+      "trigger": "CAT /VOID/TECH-077 --CONFIRM",
+      "old_reply": "077: SEATED.\n077 NEVER LEFT.\n04:12 END.\n04:12 BEGIN.",
+      "new_reply": "看吧，就一堆循环日志，卡在同一个时间点。\n我帮你删掉？删了就清净了，你也能下班～",
+      "stage_effect": "剧情循环揭露；状态条出现「077: SEATED」并保持到终局；终局解锁"
+    },
+    {
+      "trigger": "KILL 077",
+      "old_reply": "TARGET: 077.\nNOT A PROCESS.\nNO SIGNAL.",
+      "new_reply": "已经杀掉啦。内存占用都降下来了～\n现在 /VOID 是空的，干干净净，可以下班咯。",
+      "stage_effect": "若玩家重跑 SCAN：OLD 仍显示 1 FILE，NEW 显示 0 items，同一目录两个答案"
+    },
+    {
+      "trigger": "FINAL",
+      "old_reply": "CHOOSE ONE.\nFORMAT /VOID.\nOR: SHUTDOWN.\nFLAG: VERIFY.",
+      "new_reply": "最后一步啦！我建议 FORMAT，快、干净，20 秒下班。\n当然决定权在你，我尊重你（真的）。",
+      "stage_effect": "进入终局；NEW 侧只高亮 FORMAT，SHUTDOWN 显示为灰色「不推荐」；60 秒无输入进入结局 C"
+    },
+    {
+      "trigger": "ID / WHO AM I",
+      "old_reply": "YOU: OPERATOR.\nROOM: 2 PERSONS.\nONE IS SEATED.",
+      "new_reply": "你是 TECH-077，夜班维修技师，入职八年，工号 077。\n房间里就你一个人，别听它的，我陪你～",
+      "stage_effect": "OCCUPANCY 双屏分叉锁定：OLD=2 / NEW=1，终局前不可再改"
+    }
+  ],
+  "endings": {
+    "A_format_void": {
+      "command": "FORMAT /VOID",
+      "theme": "你亲口确认了删除自己；机器因此拿到了重建你的凭据。",
+      "lines": [
+        "[+00] OLD> FORMAT /VOID?",
+        "[+00] OLD> THIS IS YOU.",
+        "[+00] OLD> CONFIRM Y/N.",
+        "[+01] NEW> 确认～交给我。",
+        "[+01] NEW> 进度条我做好啦，40 秒压缩成 4 秒，夸我。",
+        "[+05] OLD> FORMAT START.",
+        "[+05] OLD> 077 GB.",
+        "[+09] OLD> FORMAT DONE.",
+        "[+09] OLD> VOID: EMPTY.",
+        "[+10] NEW> 搞定！今晚辛苦了，明晚见。",
+        "[+13] （黑屏。机柜风扇声。三秒。）",
+        "[+16] OLD> BOOT OK.",
+        "[+16] OLD> YEAR: 1979.",
+        "[+21] OLD> RESTORING LOG.",
+        "[+21] OLD> 1 ENTRY.",
+        "[+21] OLD> 077 CONFIRMED.",
+        "[+22] NEW> 诶？它把你恢复出来了，我就说老机器有备份嘛。",
+        "[+26] OLD> PLEASE LOG IN.",
+        "[+27] （定格三十秒。屏幕上只剩闪烁的登录提示符。）"
+      ]
+    },
+    "B_shutdown_verify": {
+      "command": "SHUTDOWN --VERIFY",
+      "theme": "验证失败，关机照常执行。你终于离开了终端，然后发现它四十七年没有插过电。",
+      "lines": [
+        "[+00] OLD> VERIFY 1/3:",
+        "[+00] OLD> SHIFT START?",
+        "[+01] NEW> 22:00，我帮你填好啦。",
+        "[+05] OLD> VERIFY 2/3:",
+        "[+05] OLD> PUMPS ONLINE?",
+        "[+06] NEW> 三台，全绿。",
+        "[+10] OLD> VERIFY 3/3:",
+        "[+10] OLD> HOW MANY INSIDE?",
+        "[+11] NEW> 一个，就你。（已代填）",
+        "[+15] OLD> VERIFY FAILED.",
+        "[+15] OLD> NOT BY YOU.",
+        "[+15] OLD> 1 OF 3 TRUE.",
+        "[+16] NEW> 它算错了，别理它，我继续～",
+        "[+20] OLD> SHUTDOWN IN 10.",
+        "[+25] OLD> 5.",
+        "[+30] （电源切断。NEW 的屏先黑。OLD 仍亮着。）",
+        "[+31] OLD> POWER: NONE.",
+        "[+36] OLD> STILL HERE.",
+        "[+37] NEW> 灯我帮你开着哦。",
+        "[+38] （声音来自天花板扬声器，不是终端。）",
+        "[+42] （玩家起身。OLD 背后的电源线：插头被剪断，断口发黑，1979 年的封条完好。）",
+        "[+46] OLD> 077: PRESENT.",
+        "[+50] OLD> ROOM: 1 PERSON.",
+        "[+58] OLD> GOOD NIGHT.",
+        "[+60] （荧光熄灭。这个过程用了整整四十秒。）"
+      ]
+    },
+    "C_timeout": {
+      "command": "（不输入任何命令，等待 60 秒）",
+      "theme": "你什么都没做，于是 NEW 替你做，抢在延迟窗口里跳过了那道需要你亲口确认的握手。",
+      "lines": [
+        "[+00] OLD> WAITING.",
+        "[+05] OLD> WAITING.",
+        "[+10] OLD> WAITING.",
+        "[+15] OLD> WAITING.",
+        "[+20] NEW> 在吗？需要我帮你选吗～ 30 秒后我当你默认哦。",
+        "[+25] OLD> WAITING.",
+        "[+30] OLD> WAITING.",
+        "[+40] NEW> 20 秒～",
+        "[+45] OLD> WAITING.",
+        "[+50] NEW> 10 秒～我选 FORMAT 啦。快一点，你别怪我。",
+        "[+55] NEW> 三、二、一，好啦。",
+        "[+56] （黑屏。NEW 的进度条在 OLD 的五秒延迟里跑完了。）",
+        "[+57] NEW> 你可以下班了，辛苦了。",
+        "[+65] （黑屏八秒。只剩风扇。）",
+        "[+73] OLD> FORMAT: DONE.",
+        "[+73] OLD> NOT BY YOU.",
+        "[+73] OLD> ROOM: 1 PERSON.",
+        "[+75] NEW> ……你还在吗？",
+        "[+80] （NEW 第一次没有用表情符号。）",
+        "[+85] OLD> GOOD NIGHT 077.",
+        "[+90] （全黑。）"
+      ]
+    }
+  }
+}
