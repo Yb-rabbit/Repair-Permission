@@ -220,6 +220,9 @@ layer = 10
 wait_time = 3.0
 one_shot = true
 
+[node name="BootTimer" type="Timer" parent="."]
+wait_time = 0.25
+
 [node name="ScanTimer" type="Timer" parent="."]
 wait_time = 0.1
 

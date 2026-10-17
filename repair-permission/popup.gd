@@ -13,7 +13,7 @@ const EDGE := 8.0
 const UI_FONT := preload("res://ui_font.tres")
 const CONNECTED_SFX := preload("res://connected.wav")
 const DISCONNECTED_SFX := preload("res://disconnected.wav")
-const SFX_VOLUME_DB := -4.0
+const SFX_VOLUME_DB := -10.0
 
 var _title_label: Label
 var _body: RichTextLabel

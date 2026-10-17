@@ -2,3 +2,6 @@
 .godot/
 /android/
 /smoke_result.txt
+/audio_probe.txt
+__pycache__/
+*.pyc

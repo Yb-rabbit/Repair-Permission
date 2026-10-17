@@ -10,11 +10,15 @@ Godot 4.7 打开项目，`F5`。主场景 `res://Main.tscn`，脚本 `res://game
 
 ```text
 res://
-├── Main.tscn          Control 场景（双 RichTextLabel / 3 ProgressBar / LineEdit / CRT 空槽 / FinalLine / RestartHint / Popups 图层 / 6 Timer）
+├── Main.tscn          Control 场景（双 RichTextLabel / 3 ProgressBar / LineEdit / CRT 空槽 / FinalLine / RestartHint / Popups 图层 / 7 Timer）
 ├── game.gd            全部逻辑
+├── audio.gd           房间底噪 / 双终端待机 / 一次性音效 / ACCEPT 低频嗡鸣
+├── audio/             8 个程序生成 WAV（无外部版权素材）
 ├── popup.gd           可拖动 / 可关闭 / 可确认的提示弹窗
 ├── script_data.json   命令表、乱输入池、彩蛋、三个结局
 ├── tools/smoke_test.gd
+├── tools/audio_probe.gd
+├── tools/generate_audio.py
 └── _legacy/           v1 实现与旧脚本（归档，不参与运行）
 ```
 
@@ -72,11 +76,30 @@ CRT 覆盖层是 `Main/CRT`（颜色 alpha 0、鼠标忽略），拿到 `crt.gds
 
 新增提示：在 `game.gd:_hint_for()` 里加一个 `match` 分支调用 `_hint("唯一id", "标题", "BBCode 正文")` 即可。
 
+## 声音
+
+A 档最小声音层：没有旋律 BGM，只有“房间 + 两台机器”的环境声。全部素材由 `tools/generate_audio.py` 用 Python 标准库合成，44.1 kHz / 16-bit / 立体声，循环文件首尾已交叉淡化。
+
+| 层 | 文件 | 默认音量 | 行为 |
+| --- | --- | --- | --- |
+| 房间底噪 | `audio/room_tone.wav` | -17 dB | 开局持续；黑屏时略降 |
+| OLD 待机 | `audio/old_idle.wav` | -21 dB | 50 Hz 嗡鸣 + 风扇 + 偶发继电器/走纸 |
+| NEW 待机 | `audio/new_idle.wav` | -24 dB | 干净高频气流，开机完成后淡入 |
+| ACCEPT 低频 | `audio/tension_hum.wav` | -21 dB | `PUMP 3 --ACCEPT-NEW` 后淡入，`SCAN /FULL` 开始时淡出 |
+| OLD 打印 | `audio/old_print.wav` | -16 dB / 暗行 -25 dB | 每次 OLD 输出一行，4 个播放器轮换，随机微调音高 |
+| 回车继电器 | `audio/old_relay.wav` | -15 dB | 每次真实输入 |
+| NEW 提示 | `audio/new_tick.wav` | -22 dB | 每次 NEW 发言（打字） |
+| NEW 双音 | `audio/new_chime.wav` | -14 dB | 登录成功 / ACCEPT-NEW |
+
+`KILL 077` 后 NEW 待机会淡出，任意真实输入会淡入恢复；结局开始时收掉 ACCEPT 嗡鸣，黑屏降下 NEW/房间层，结局播完 4 秒内全部淡出。弹窗的 `connected.wav` / `disconnected.wav` 仍保留，但音量已从 -4 dB 降到 -10 dB，不再压过环境层。
+
+重新生成素材：`python tools/generate_audio.py`。Godot 首次打开项目会自动导入 `audio/*.wav`；如果直接跑 headless 测试且出现 “no resource loaders”，先执行一次 `godot --headless --import --path .`。
+
 ## 调参
 
 `game.gd` 里：`scan_duration`（默认 15 秒）。
-`Main.tscn` 里：`OldTimer.wait_time`（默认 3 秒）、`ScanTimer.wait_time`（0.1）、`ReplayTimer.wait_time`（0.25）、`EndTimer.wait_time`（1.4）、`InheritTimer.wait_time`（60 秒）。
-`popup.gd` 里：`WIDTH`（弹窗宽度 380）、`EDGE`（贴边留白 8）；出现位置在 `open()` 里计算（右上角，按队列层叠 26px）；`SFX_VOLUME_DB`（弹窗音效音量，默认 -4 dB），音源固定为根目录的 `connected.wav` / `disconnected.wav`。
+`Main.tscn` 里：`BootTimer.wait_time`（0.25）、`OldTimer.wait_time`（默认 3 秒）、`ScanTimer.wait_time`（0.1）、`ReplayTimer.wait_time`（0.25）、`EndTimer.wait_time`（1.4）、`InheritTimer.wait_time`（60 秒）。
+`popup.gd` 里：`WIDTH`（弹窗宽度 380）、`EDGE`（贴边留白 8）；出现位置在 `open()` 里计算（右上角，按队列层叠 26px）；`SFX_VOLUME_DB`（弹窗音效音量，默认 -10 dB），音源固定为根目录的 `connected.wav` / `disconnected.wav`。
 
 ## 冒烟测试
 
@@ -84,7 +107,15 @@ CRT 覆盖层是 `Main/CRT`（颜色 alpha 0、鼠标忽略），拿到 `crt.gds
 godot --headless --path . --script res://tools/smoke_test.gd
 ```
 
-结果写入 `smoke_result.txt`，覆盖登录预填（Enter 信号）、命令表加载、三层匹配、提示链内容（LOG / MANUAL / ID / SCAN /FULL）、CAT 顺序保护、乱输入彩蛋、隐藏值、扫描期输入锁、弹窗（出现 / 排队 / 拖拽 / 确认关闭 / 结局清空 / 音效）、A/B 回放、C 的扫描门槛 / 直接日期入口 / KILL 静默入口 / 输入取消 / A/B 优先 / 时钟回绕 / `[PATCH]` 回放 / 黑屏、最终行与 R 重置提示（当前 57/57 通过）。
+结果写入 `smoke_result.txt`，覆盖登录预填（Enter 信号）、命令表加载、三层匹配、提示链内容（LOG / MANUAL / ID / SCAN /FULL）、CAT 顺序保护、乱输入彩蛋、隐藏值、扫描期输入锁、弹窗（出现 / 排队 / 拖拽 / 确认关闭 / 结局清空 / 音效）、A/B 回放、C 的扫描门槛 / 直接日期入口 / KILL 静默入口 / 输入取消 / A/B 优先 / 时钟回绕 / `[PATCH]` 回放 / 黑屏、最终行与 R 重置提示，以及声音层的节点/循环/状态（当前 73/73 通过）。
+
+只检查声音节点与循环参数（不实际发声）：
+
+```text
+godot --headless --path . --script res://tools/audio_probe.gd
+```
+
+结果写入 `audio_probe.txt`，包含 4 个循环层的 `playing` / `loop_mode` / `loop_end` / 长度，以及 ACCEPT、SCAN、KILL 的状态切换。
 
 ## 已知取舍
 
@@ -92,4 +123,5 @@ godot --headless --path . --script res://tools/smoke_test.gd
 - C 的 KILL 静默窗口是 60 秒，任何真实输入都会取消；它不会在 A / B 结束后被重新启动或接管。C 的文本在 `script_data.json` 的 `endings.inherit`，计时器是 `Main/InheritTimer`；进入黑屏后会显示 `PRESS R TO RESTART`，按 R 重开。
 - 左上角铭牌改成了 `1999`，但剧情文本里仍保留 `YEAR 1979`、`LOG 11-03-1979`、`SEALED 1979`、`UPTIME 46Y`（`PS` 的「年份一直是错的」正是靠这些数字成立）。要全局统一成 1999，需要同时改 `boot.old`、`LOG`、`PUMP 3`、彩蛋、三个结局和 `PS` 的 `UPTIME`。
 - 弹窗不暂停游戏、不抢输入焦点，所以开着弹窗也能继续敲命令；按钮与面板都不拿键盘焦点。
-- 只有弹窗提示音（`connected.wav` / `disconnected.wav`），没有背景音乐、存档、导出配置。
+- 声音只有 A 档环境层（见「声音」），没有旋律 BGM、没有独立音量设置/静音键；素材为程序合成，适合 Jam 原型，正式版可替换为录制素材。
+- 没有存档、导出配置。

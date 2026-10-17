@@ -5,6 +5,7 @@ extends Control
 
 const DATA_PATH := "res://script_data.json"
 const POPUP_SCRIPT := preload("res://popup.gd")
+const AUDIO_SCRIPT := preload("res://audio.gd")
 const UI_FONT := preload("res://ui_font.tres")
 
 # OLD clock: starts at 99-12-31 23:59:50 and rewinds 10s at the midnight boundary.
@@ -22,6 +23,8 @@ const INHERIT_GLITCH_STEPS := 20
 const INHERIT_GLITCH_STEP := 0.05
 const INHERIT_GLITCH_CHARS := 360
 const GLITCH_POOL := "0123456789ABCDEF:/._-#%$"
+const BOOT_TICK := 0.25
+const BOOT_SKIP_HINT := "SKIP: ESC"
 
 @onready var old_text: RichTextLabel = $VBox/Mid/OldPanel/OldText
 @onready var new_text: RichTextLabel = $VBox/Mid/NewPanel/NewText
@@ -36,6 +39,7 @@ const GLITCH_POOL := "0123456789ABCDEF:/._-#%$"
 @onready var restart_hint: Label = $RestartHint
 @onready var popup_layer: CanvasLayer = $Popups
 @onready var old_timer: Timer = $OldTimer
+@onready var boot_timer: Timer = $BootTimer
 @onready var scan_timer: Timer = $ScanTimer
 @onready var replay_timer: Timer = $ReplayTimer
 @onready var end_timer: Timer = $EndTimer
@@ -57,6 +61,9 @@ var scan_duration := 15.0
 var scan_stage := 0
 var scan_done := false
 
+var pump_handled := false          # true after --ISOLATE or --ACCEPT-NEW
+var pump_gate_logged := false      # soft-gate line already recorded
+
 var replay_index := 0
 var ending_lines: Array = []
 var ending_index := 0
@@ -71,6 +78,29 @@ var last_input_msec := 0
 var idle_egg_shown := false
 
 var new_tween: Tween
+var _audio
+
+var boot_done := false                 # false -> input hidden, commands ignored
+var boot_index := 0
+var boot_lines: Array[String] = [
+	"REPAIR PERMISSION // NIGHT SHIFT",
+	"POST: CPU ................ OK",
+	"POST: MEM 640K ........... OK",
+	"POST: DISK 40MB .......... OK",
+	"POST: KEYBOARD ........... OK",
+	"MEM TEST ................. PASS",
+	"DISK 0: 40MB ............. READY",
+	"RTC SYNC... FAILED",
+	"RTC: 99-12-31 23:59:50",
+	"USING LAST KNOWN TIME",
+	"PATCH-Y2KW .............. MOUNTED",
+	"PATCH-Y2KW ... LOADED",
+	"TERMINAL BUS ............. 1",
+	"1 TERMINAL AVAILABLE",
+	"READY.",
+	"TWO-TERMINAL MINIMAL BUILD For LD60",
+	"BY YibiRabbit007",
+]
 
 var _popup: PanelContainer = null      # currently visible hint popup
 var _popup_queue: Array[Dictionary] = []
@@ -89,6 +119,7 @@ func _ready() -> void:
 	_build_commands()
 	_setup_fonts()
 	_setup_ui()
+	_setup_audio()
 	_setup_status_clock()
 	old_timer.timeout.connect(_on_old_timeout)
 	scan_timer.timeout.connect(_on_scan_tick)
@@ -98,13 +129,16 @@ func _ready() -> void:
 	inherit_timer.one_shot = true
 	inherit_timer.timeout.connect(_on_inherit_timeout)
 	input_line.text_submitted.connect(_on_submit)
-	input_line.grab_focus()
-	_old_say(data.boot.old)
-	_new_say(str(data.boot.new))
-	_show_boot_hint()
+	boot_timer.timeout.connect(_on_boot_tick)
+	_start_boot()
 
 
 # ---------------- Setup ----------------
+
+func _setup_audio() -> void:
+	_audio = AUDIO_SCRIPT.new()
+	add_child(_audio)
+
 
 func _setup_fonts() -> void:
 	old_text.add_theme_font_override("normal_font", UI_FONT)
@@ -128,12 +162,96 @@ func _setup_ui() -> void:
 	bar3.max_value = 20
 	bar3.value = 0
 	input_line.placeholder_text = "Type a command, press Enter"
+	input_line.visible = false
 	final_line.visible = false
 	restart_hint.visible = false
 	crt.color = Color(0, 0, 0, 0)
+
+
+func _prefill_login() -> void:
 	# NEW already filled in half the login: Enter auto-completes "LOGIN" to "LOGIN 077".
 	input_line.text = "LOGIN"
 	input_line.select_all()
+
+
+# ---------------- Boot sequence: OLD terminal only, one line every BOOT_TICK ----------------
+
+func _start_boot() -> void:
+	boot_done = false
+	boot_index = 0
+	boot_timer.wait_time = BOOT_TICK
+	_show_skip_hint()
+	boot_timer.start()
+
+
+func _on_boot_tick() -> void:
+	if boot_index >= boot_lines.size():
+		_finish_boot()
+		return
+	_boot_print(boot_lines[boot_index], boot_index == 0)
+	boot_index += 1
+	if boot_index >= boot_lines.size():
+		_finish_boot()
+
+
+func _boot_print(line: String, small := false) -> void:
+	if small:
+		old_text.push_font_size(11)
+		old_text.push_color(Color("#3f7f4d"))
+	else:
+		old_text.push_color(Color("#96ffa8"))
+	old_text.add_text(line + "\n")
+	old_text.pop()
+	if small:
+		old_text.pop()
+
+
+func _finish_boot(skip := false) -> void:
+	if boot_done:
+		return
+	boot_timer.stop()
+	if skip:
+		while boot_index < boot_lines.size():
+			_boot_print(boot_lines[boot_index], boot_index == 0)
+			boot_index += 1
+	boot_done = true
+	_hide_skip_hint()
+	input_line.visible = true
+	_prefill_login()
+	input_line.grab_focus()
+	_audio.on_boot_done()
+	_old_say(data.boot.old)
+	_new_say(str(data.boot.new))
+	_show_boot_hint()
+
+
+func _show_skip_hint() -> void:
+	# Reuse the ending's restart hint as the bottom-right boot hint (no new UI nodes).
+	restart_hint.text = BOOT_SKIP_HINT
+	restart_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	restart_hint.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	restart_hint.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	restart_hint.offset_left = -170.0
+	restart_hint.offset_top = -42.0
+	restart_hint.offset_right = -22.0
+	restart_hint.offset_bottom = -18.0
+	restart_hint.add_theme_font_size_override("font_size", 12)
+	restart_hint.modulate = Color(1, 1, 1, 0.55)
+	restart_hint.visible = true
+
+
+func _hide_skip_hint() -> void:
+	restart_hint.visible = false
+	restart_hint.text = "PRESS R TO RESTART"
+	restart_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	restart_hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	restart_hint.set_anchors_preset(Control.PRESET_CENTER)
+	restart_hint.offset_left = -250.0
+	restart_hint.offset_top = 72.0
+	restart_hint.offset_right = 250.0
+	restart_hint.offset_bottom = 108.0
+	restart_hint.add_theme_font_size_override("font_size", 18)
+	restart_hint.modulate = Color(1, 1, 1, 1)
 
 
 # ---------------- Status clock / epoch ----------------
@@ -206,13 +324,15 @@ func _build_commands() -> void:
 func _on_submit(raw: String) -> void:
 	var text := raw.strip_edges()
 	input_line.clear()
-	if in_ending:
+	if not boot_done or in_ending:
 		return
 	if text == "":
 		return
 	last_input_msec = Time.get_ticks_msec()
 	# Any real input cancels the KILL 077 inheritance window.
 	inherit_timer.stop()
+	_audio.on_player_input()
+	_audio.on_submit()
 
 	var cmd := text.to_upper()
 	history.append(cmd)
@@ -279,6 +399,8 @@ func _run(cmd: String) -> void:
 	_old_say(entry.old)
 	var cb: Callable = entry.cb
 	cb.call()
+	if cmd == "LOGIN 077":
+		_audio.play_chime()
 	_hint_for(cmd)
 
 
@@ -330,6 +452,7 @@ func _on_old_timeout() -> void:
 
 
 func _old_print(text: String, dim := false) -> void:
+	_audio.on_old_print(dim)
 	old_text.push_color(Color("#3f7f4d") if dim else Color("#96ffa8"))
 	old_text.add_text(text + "\n")
 	old_text.pop()
@@ -344,6 +467,7 @@ func _new_say(text: String) -> void:
 	var total := new_text.get_total_character_count()
 	if total <= start:
 		return
+	_audio.on_new_say()
 	new_text.visible_characters = start
 	new_tween = create_tween()
 	new_tween.tween_property(new_text, "visible_characters", total, float(total - start) * 0.012)
@@ -377,11 +501,14 @@ func _act_pump() -> void:
 
 
 func _act_isolate() -> void:
+	pump_handled = true
 	var tw := create_tween()
 	tw.tween_property(pump_bar, "value", 60.0, 2.0)
 
 
 func _act_accept() -> void:
+	pump_handled = true
+	_audio.on_accept_new()
 	temp += 2                            # hidden stat: no hint at all
 	bar3.value = temp
 	var tw := create_tween()
@@ -395,15 +522,23 @@ func _act_date_auto() -> void:
 
 func _act_kill() -> void:
 	void_killed = true
+	_audio.on_kill()
 	inherit_timer.start()
 
 
 func _act_scan_full() -> void:
 	if scan_done or not scan_timer.is_stopped():
 		return
+	_audio.on_scan_start()
 	scan_time = 0.0
 	scan_stage = 0
 	scan_bar.value = 0
+	# Soft gate: scanning still runs, but OLD records the untouched pump once.
+	if not pump_handled and not pump_gate_logged:
+		pump_gate_logged = true
+		var note := "PUMP UNSERVICED. LOGGED."
+		history.append("* " + note)      # "* " marks an OLD record, not player input
+		_old_say([note])
 	scan_timer.start()
 
 
@@ -472,6 +607,7 @@ func _begin_ending(key: String) -> void:
 		return
 	in_ending = true
 	ending_key = key
+	_audio.on_ending_start()
 	replay_index = 0
 	inherit_timer.stop()
 	scan_timer.stop()
@@ -526,8 +662,12 @@ func _glitch_text(length: int) -> String:
 
 func _on_replay_tick() -> void:
 	if replay_index < history.size():
+		var entry := history[replay_index]
 		var prefix := "[PATCH] " if ending_key == "inherit" else "> "
-		_old_print(prefix + history[replay_index], true)
+		if entry.begins_with("* "):
+			_old_print(entry.substr(2), true)   # OLD record: dim, no input prompt
+		else:
+			_old_print(prefix + entry, true)
 		replay_index += 1
 		return
 	replay_timer.stop()
@@ -540,6 +680,7 @@ func _on_replay_tick() -> void:
 func _on_end_tick() -> void:
 	if ending_index >= ending_lines.size():
 		end_timer.stop()
+		_audio.on_ending_complete()
 		return
 	var line := str(ending_lines[ending_index])
 	ending_index += 1
@@ -558,6 +699,7 @@ func _on_end_tick() -> void:
 func _show_black_screen() -> void:
 	crt.color = Color(0, 0, 0, 1)
 	restart_hint.visible = true
+	_audio.on_black_screen()
 
 
 func _show_final_line(text: String) -> void:
@@ -567,9 +709,14 @@ func _show_final_line(text: String) -> void:
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
-	if in_ending and event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_R:
-			get_tree().reload_current_scene()
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	if not boot_done:
+		if event.keycode == KEY_ESCAPE:
+			_finish_boot(true)
+		return
+	if in_ending and event.keycode == KEY_R:
+		get_tree().reload_current_scene()
 
 
 # ---------------- Hint popups: draggable / closable / confirmable ----------------

@@ -14,6 +14,19 @@ func _initialize() -> void:
 	main = load("res://Main.tscn").instantiate()
 	root.add_child(main)
 	await create_timer(0.25).timeout
+	_check("boot_input_hidden", not main.boot_done and not main.input_line.visible, "")
+	_check("boot_skip_hint", main.restart_hint.visible and main.restart_hint.text == "SKIP: ESC", main.restart_hint.text)
+	main._on_submit("HELP")
+	_check("boot_input_ignored", main.history.is_empty(), str(main.history))
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	main._unhandled_key_input(esc)        # smoke test skips the 15-line boot sequence
+	_check("boot_skip_esc", main.boot_done, "")
+	_check("boot_lines_written", main.old_text.get_parsed_text().contains("REPAIR PERMISSION // NIGHT SHIFT") and main.old_text.get_parsed_text().contains("READY."), "")
+	_check("boot_skip_hint_hidden", not main.restart_hint.visible, "")
+	_check("audio_room_and_old_layers", main._audio != null and main._audio.room_player.playing and main._audio.old_player.playing, "")
+	_check("audio_new_layer_after_boot", main._audio.new_layer_on and main._audio.new_player.playing, "")
 
 	main.old_timer.stop()
 	main.pending_old.clear()
@@ -93,10 +106,12 @@ func _initialize() -> void:
 	await _tick()
 	_check("hidden_temp", main.temp == 2, str(main.temp))
 	_check("bar3_value", int(main.bar3.value) == 2, str(main.bar3.value))
+	_check("audio_accept_hum", main._audio.tension_on and main._audio.tension_player.playing, "")
 
 	main._on_submit("KILL 077")
 	await _tick()
 	_check("void_killed", main.void_killed, "")
+	_check("audio_kill_silences_new", not main._audio.new_layer_on, "")
 	main._on_submit("LS /VOID")
 	await _tick()
 	_check("new_side_void_zero", main.new_text.get_parsed_text().contains("0 items"), "")
@@ -112,6 +127,7 @@ func _initialize() -> void:
 	main._on_submit("SCAN /FULL")
 	main._on_submit("HELLO")
 	await create_timer(0.05).timeout
+	_check("audio_scan_stops_hum", not main._audio.tension_on, "")
 	_check("scan_input_locked", main.old_text.get_parsed_text().contains("[ DELETED ]"), "")
 	_check("scan_input_still_logged", main.history[-1] == "HELLO", main.history[-1])
 	await create_timer(0.8).timeout
@@ -183,6 +199,28 @@ func _initialize() -> void:
 	await _tick()
 	_check("ab_priority_over_inherit", main.in_ending and main.ending_key == "format" and main.inherit_timer.is_stopped(), main.ending_key)
 
+	# Soft gate: SCAN still runs; OLD records the unserviced pump and replays it.
+	main = await _fresh_main()
+	main._on_submit("SCAN /FULL")
+	await _tick()
+	_check("soft_gate_logged", main.history.has("* PUMP UNSERVICED. LOGGED."), str(main.history))
+	await create_timer(0.5).timeout
+	_check("soft_gate_scan_runs", main.scan_done, str(main.scan_stage))
+	_check("soft_gate_old_line", main.old_text.get_parsed_text().contains("PUMP UNSERVICED. LOGGED."), "")
+	main.old_text.clear()
+	main.scan_done = true
+	main._on_submit("FORMAT /VOID")
+	await create_timer(1.2).timeout
+	_check("soft_gate_replayed", main.replay_index == main.history.size() and main.old_text.get_parsed_text().contains("PUMP UNSERVICED. LOGGED."), "")
+
+	# Pump handled first -> no soft-gate record.
+	main = await _fresh_main()
+	main._on_submit("PUMP 3 --ISOLATE")
+	await _tick()
+	main._on_submit("SCAN /FULL")
+	await _tick()
+	_check("soft_gate_handled_silent", not main.history.has("* PUMP UNSERVICED. LOGGED."), str(main.history))
+
 	_finish()
 
 
@@ -192,6 +230,7 @@ func _fresh_main() -> Node:
 	var next_main: Node = load("res://Main.tscn").instantiate()
 	root.add_child(next_main)
 	await create_timer(0.25).timeout
+	next_main._finish_boot(true)          # smoke test skips the 15-line boot sequence
 	next_main.old_timer.stop()
 	next_main.pending_old.clear()
 	next_main.old_timer.wait_time = 0.02
