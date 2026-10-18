@@ -76,6 +76,11 @@ var scan_stream_index := 0
 
 var pump_handled := false          # true after --ISOLATE or --ACCEPT-NEW
 var pump_gate_logged := false      # soft-gate line already recorded
+var pump_choice := ""              # "", "isolate" or "accept"
+var read_cat := false              # player opened /VOID/TECH-077
+var saw_that := false              # KILL 077 one-shot line already delivered
+var _fake07_seen := false          # fake manual 07 already queued/shown
+var fake07_delay := 8.0            # seconds after the first KILL; tests shorten this
 
 var replay_index := 0
 var ending_lines: Array = []
@@ -173,8 +178,9 @@ func _setup_ui() -> void:
 	new_text.visible_characters = -1
 	pump_bar.max_value = 100
 	scan_bar.max_value = 100
-	bar3.max_value = 20
+	bar3.max_value = 4.0
 	bar3.value = 0
+	bar3.modulate.a = 0.0
 	input_line.placeholder_text = "Type a command, press Enter"
 	input_line.visible = false
 	final_line.visible = false
@@ -426,6 +432,8 @@ func _run(cmd: String) -> void:
 	cb.call()
 	if cmd == "LOGIN 077":
 		_audio.play_chime()
+	if cmd == "CAT /VOID/TECH-077":
+		read_cat = true
 	_hint_for(cmd)
 
 
@@ -527,28 +535,65 @@ func _act_pump() -> void:
 
 func _act_isolate() -> void:
 	pump_handled = true
+	pump_choice = "isolate"
 	var tw := create_tween()
 	tw.tween_property(pump_bar, "value", 60.0, 2.0)
 
 
 func _act_accept() -> void:
 	pump_handled = true
+	pump_choice = "accept"
 	_audio.on_accept_new()
-	temp += 2                            # hidden stat: no hint at all
-	bar3.value = temp
+	_add_remote_writes(2)
 	var tw := create_tween()
 	tw.tween_property(pump_bar, "value", 100.0, 1.5)
 
 
+func _add_remote_writes(points: int) -> void:
+	temp += points                       # hidden stat: 2 points per NEW decision
+	bar3.value = float(temp)
+	if bar3.modulate.a < 1.0:
+		var reveal := create_tween()
+		reveal.tween_property(bar3, "modulate:a", 1.0, 0.35)
+
+
 func _act_date_auto() -> void:
-	temp += 2
-	bar3.value = temp
+	_add_remote_writes(2)
 
 
 func _act_kill() -> void:
 	void_killed = true
 	_audio.on_kill()
 	inherit_timer.start()
+	if not saw_that:
+		saw_that = true
+		_old_say(["WE SAW THAT."])
+		_schedule_fake07()
+
+
+func _schedule_fake07() -> void:
+	if _fake07_seen:
+		return
+	await get_tree().create_timer(fake07_delay).timeout
+	if not is_inside_tree() or in_ending or _fake07_seen:
+		return
+	_show_fake07()
+
+
+func _show_fake07() -> void:
+	if in_ending or _fake07_seen:
+		return
+	var pages: Dictionary = data.get("fake_manuals", {})
+	var page: Dictionary = pages.get("07", {})
+	if page.is_empty():
+		return
+	_fake07_seen = true
+	_popup_queue.append({
+		"title": str(page.get("title", "Night Shift Manual 07")),
+		"body": str(page.get("body", "")),
+		"ok": str(page.get("ok", "I will remember")),
+	})
+	_pump_popup()
 
 
 func _act_scan_full() -> void:
@@ -647,6 +692,10 @@ func _finish_scan() -> void:
 	var stream: Dictionary = data.get("scan_stream", {})
 	var scan_old = stream.get("done", ["SCAN DONE", "VOL 3 /VOID", "SIZE 077 GB", "MOUNTED 1979"]).duplicate()
 	scan_old.append(str(data.scan_complete.old[0]))
+	if pump_choice == "isolate":
+		scan_old.append("MANUAL SEAL: LOGGED")
+	elif pump_choice == "accept":
+		scan_old.append("REMOTE WRITE: 1")
 	_old_say(scan_old)
 	epoch_label.visible = true
 	_hint_scan()
@@ -729,6 +778,27 @@ func _glitch_text(length: int) -> String:
 	return out
 
 
+func _ending_coda() -> Array[String]:
+	var coda: Array[String] = []
+	if pump_choice == "isolate":
+		coda.append("OLD> PUMP: MANUAL SEAL.")
+	elif pump_choice == "accept":
+		coda.append("OLD> PUMP: REMOTE WRITE.")
+	else:
+		coda.append("OLD> PUMP: UNSERVICED.")
+	if temp > 0 and read_cat:
+		coda.append("OLD> REMOTE DECISIONS: %d. FILE READ." % int(temp / 2))
+	elif temp > 0:
+		coda.append("OLD> REMOTE DECISIONS: %d." % int(temp / 2))
+	elif read_cat:
+		coda.append("OLD> FILE READ: TECH-077.")
+	if void_killed:
+		coda.append("OLD> PROCESS ENDED. LOG CONTINUES.")
+	elif junk_count > 0:
+		coda.append("OLD> JUNK ENTRIES: %d." % junk_count)
+	return coda
+
+
 func _on_replay_tick() -> void:
 	if replay_index < history.size():
 		var entry := history[replay_index]
@@ -740,7 +810,8 @@ func _on_replay_tick() -> void:
 		replay_index += 1
 		return
 	replay_timer.stop()
-	ending_lines = data.endings[ending_key]
+	ending_lines = _ending_coda()
+	ending_lines.append_array(data.endings[ending_key])
 	ending_index = 0
 	_old_print("[ PATCH COMPLETE ]" if ending_key == "inherit" else "[ REPLAY END ]", true)
 	end_timer.start()
@@ -783,6 +854,9 @@ func _show_black_screen(alpha: float = END_BLACK_ALPHA, fade_audio: bool = true)
 func _show_end_card() -> void:
 	if not is_inside_tree():
 		return
+	# Deferred: changing a focused LineEdit's visibility inside the fade tween's
+	# callback can stall the container layout on Godot 4.7.
+	input_line.call_deferred("hide")
 	end_status.text = END_STATUS_TEXT
 	end_status.visible = true
 	restart_hint.visible = true
@@ -848,7 +922,7 @@ func _pump_popup() -> void:
 	var item: Dictionary = _popup_queue.pop_front()
 	var p: PanelContainer = POPUP_SCRIPT.new()
 	popup_layer.add_child(p)
-	p.open(str(item.title), str(item.body))
+	p.open(str(item.title), str(item.body), str(item.get("ok", "Got it")))
 	p.closed.connect(_on_popup_closed.bind(p))
 	_popup = p
 

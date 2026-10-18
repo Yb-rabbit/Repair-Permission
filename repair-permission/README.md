@@ -41,12 +41,12 @@ CRT 覆盖层是 `Main/CRT`（颜色 alpha 0、鼠标忽略），拿到 `crt.gds
 | `MANUAL` | 重新弹出已经看过的值班手册页面（不剧透未解锁内容） |
 | `UNDO` | NEW 说撤销成功，OLD 说没这条命令 |
 | `PUMP 3` | 看封条 |
-| `PUMP 3 --ISOLATE` | 走 OLD 的机械隔离 |
-| `PUMP 3 --ACCEPT-NEW` | 接受 NEW 的远程修复；隐藏值 +2 |
+| `PUMP 3 --ISOLATE` | 走 OLD 的机械隔离；扫描完成时 OLD 追加 `MANUAL SEAL: LOGGED` |
+| `PUMP 3 --ACCEPT-NEW` | 接受 NEW 的远程修复；隐藏值 +2，右侧远程写入条亮起并同步到 2/4；扫描完成时 OLD 追加 `REMOTE WRITE: 1` |
 | `SCAN` | 慢扫描（只是台词） |
 | `SCAN /FULL` | 15 秒进度条 + 9 行文件系统流；约 74% 卡 99%，约 87% 回落到 97%，再走到 100%；NEW 中途插话两次 |
 | `LS /VOID` / `PS` / `CAT /VOID/TECH-077` | 隐藏分区、进程、文本日志 |
-| `KILL 077` | 杀掉进程；之后 NEW 的 `/VOID` 变成 0 items；开启 60 秒无输入窗口 |
+| `KILL 077` | 杀掉进程；全游戏仅一次 OLD `WE SAW THAT.`；8 秒后弹出假手册 07；之后 NEW 的 `/VOID` 变成 0 items；开启 60 秒无输入窗口 |
 | `ID` | 房间里有几个人 |
 | `FORMAT /VOID` | 结局 A（先逐条回放你的全部输入；restore loop 后淡出至半透明黑，显示 `SHIFT ENDED` / 重开提示，无叙事终行） |
 | `SHUTDOWN --VERIFY` | 结局 B（同样先回放；播完后淡出至半透明黑，显示 `SHIFT ENDED` / 重开提示） |
@@ -57,6 +57,8 @@ CRT 覆盖层是 `Main/CRT`（颜色 alpha 0、鼠标忽略），拿到 `crt.gds
 输入匹配三层：精确 → `begins_with` 补全（例如 `PUMP` → `PUMP 3`，NEW 代跑、OLD 纠错）→ 完全不匹配走气氛回复；乱输入第 3 次触发 OLD 彩蛋。
 
 三个结局都要求先完成 `SCAN /FULL`。A / B 是明确的收场命令，永远优先；C 是独立的第三条路线，不会在 A / B 播放完后接管。C 有两个入口：`SET DATE 2038-*`，或 `KILL 077` 后连续 60 秒不输入任何命令。KILL 的静默窗口会被任意一次真实输入取消，所以 `KILL 077 → LS /VOID` 仍然安全。
+
+回放结束后、结局正文开始前，OLD 会先输出 2–3 行行动记录（coda），把这一局的选择钉在日志里：`PUMP: MANUAL SEAL.` / `PUMP: REMOTE WRITE.` / `PUMP: UNSERVICED.`，远程决策次数与是否读过 `CAT /VOID/TECH-077`，以及 `PROCESS ENDED. LOG CONTINUES.` 或乱输入条数。coda 只描述已发生的事，不改变结局判定。
 
 A / B 为 0.9 秒淡出至半透明黑（仍能隐约看到终端），C 为 0.9 秒淡出至全黑；淡出后再等 0.25 秒显示 `SHIFT ENDED` 与 `PRESS R TO RESTART`。`SHIFT ENDED` 是 UI 状态，不属于结局叙事文本；A 仍然没有叙事终行。
 
@@ -73,10 +75,11 @@ A / B 为 0.9 秒淡出至半透明黑（仍能隐约看到终端），C 为 0.9
 | `PUMP 3` | 值班手册 03：`--ISOLATE` / `--ACCEPT-NEW` 两条路，以及下一步 `SCAN /FULL` |
 | `SCAN /FULL` 扫完 | 值班手册 04：`LS /VOID`、`PS`、`CAT /VOID/TECH-077`；随后 06：32 位上限与 `2038-01-19` 提示 |
 | `CAT /VOID/TECH-077` | 值班手册 05：`KILL 077` 与两种收场命令 |
+| 首次 `KILL 077` 后 8 秒 | 假手册 07「Page Not Filed」：四条规则，按钮 `I will remember`；只弹一次，不进入 `MANUAL` 回放 |
 
-操作：拖标题栏移动位置（自动夹在窗口内）、点右上 `×` 或按 `ESC` 关闭、点「Got it」确认。每条只弹一次，多个提示排队依次出现，进入结局时全部清空。
+操作：拖标题栏移动位置（自动夹在窗口内）、点右上 `×` 或按 `ESC` 关闭、点「Got it」确认。每条只弹一次，多个提示排队依次出现，进入结局时全部清空。假手册 07 走同一条弹窗队列，但不在 `MANUAL` 的白名单里；如果 8 秒内进入结局，它会被跳过。
 
-输入 `MANUAL` 会按首次出现的顺序重新弹出**已经看过**的页面（未解锁的页面不会提前显示）；它会和普通命令一样得到 OLD / NEW 两边的回复。
+输入 `MANUAL` 会按首次出现的顺序重新弹出**已经看过**的页面（未解锁的页面不会提前显示）；它会和普通命令一样得到 OLD / NEW 两边的回复。假手册 07 永远不会被 `MANUAL` 重放。
 
 顺序保护：如果玩家在扫描前就输入 `CAT /VOID/TECH-077`，会先把手册 04 排进队列，再排 05，避免跳过隐藏分区说明。
 
@@ -113,7 +116,7 @@ A 档最小声音层：没有旋律 BGM，只有“房间 + 两台机器”的�
 godot --headless --path . --script res://tools/smoke_test.gd
 ```
 
-结果写入 `smoke_result.txt`，覆盖登录预填（Enter 信号）、命令表加载、三层匹配、提示链内容（LOG / MANUAL / ID / SCAN /FULL）、CAT 顺序保护、乱输入彩蛋、隐藏值、扫描期输入锁、扫描流与 99%→97% 回退、弹窗（出现 / 排队 / 拖拽 / 确认关闭 / 结局清空 / 音效）、A/B 回放、A 的 restore loop / 无 NEW 收尾 / 淡出半透明黑 / 无叙事终行 / 结束卡、B 的淡出半透明黑与结束卡、C 的扫描门槛 / 直接日期入口 / KILL 静默入口 / 输入取消 / A/B 优先 / 时钟回绕 / pre-replay 台词 / `[PATCH]` 回放 / 淡出全黑 / `PATCH-Y2KW v2` 终行 / 结束卡 / R 重置提示、两个 SET DATE 彩蛋及其短格式，以及声音层的节点/循环/状态（当前 97/97 通过）。
+结果写入 `smoke_result.txt`，覆盖登录预填（Enter 信号）、命令表加载、三层匹配、提示链内容（LOG / MANUAL / ID / SCAN /FULL）、CAT 顺序保护、乱输入彩蛋、隐藏值、扫描期输入锁、扫描流与 99%→97% 回退、弹窗（出现 / 排队 / 拖拽 / 确认关闭 / 结局清空 / 音效）、选择回声（`MANUAL SEAL: LOGGED` / `REMOTE WRITE: 1`）、远程写入条（上限 4 / ACCEPT 后显示并同步）、A/B 回放、A 的 restore loop / 无 NEW 收尾 / 淡出半透明黑 / 无叙事终行 / 结束卡 / 输入框占位清除、B 的淡出半透明黑与结束卡、C 的扫描门槛 / 直接日期入口 / KILL 静默入口 / 输入取消 / A/B 优先 / 时钟回绕 / pre-replay 台词 / `[PATCH]` 回放 / 淡出全黑 / `PATCH-Y2KW v2` 终行 / 结束卡 / R 重置提示、两个 SET DATE 彩蛋及其短格式、三个结局的 coda、KILL 的 `WE SAW THAT.` 一次性与假手册 07（弹出 / 按钮文案 / 不进 MANUAL / 不重放），以及声音层的节点/循环/状态（当前 118/118 通过）。
 
 只检查声音节点与循环参数（不实际发声）：
 
@@ -122,6 +125,32 @@ godot --headless --path . --script res://tools/audio_probe.gd
 ```
 
 结果写入 `audio_probe.txt`，包含 4 个循环层的 `playing` / `loop_mode` / `loop_end` / 长度，以及 ACCEPT、SCAN、KILL 的状态切换。
+
+## 导出
+
+仓库包含 `export_presets.cfg`，提供两个预设：
+
+| 预设 | 平台 | 输出路径 |
+| --- | --- | --- |
+| `Web` | Web | `../../导出包/NIGHT_SHIFT_60/Repair Permission.html` |
+| `Windows Desktop` | Windows x86_64 | `../../导出包/NIGHT_SHIFT_601/Repair Permission.exe` |
+
+Web 只能用 Compatibility 渲染器，因此 `project.godot` 已统一设为 `renderer/rendering_method="gl_compatibility"`。导出前需要在 Godot 4.7 中安装对应导出模板（编辑器 → 编辑器 → 管理导出模板）；Web 预设关闭了线程支持，普通静态服务器即可运行。
+
+```text
+godot --headless --path . --export-release "Web" "../../导出包/NIGHT_SHIFT_60/Repair Permission.html"
+godot --headless --path . --export-release "Windows Desktop" "../../导出包/NIGHT_SHIFT_601/Repair Permission.exe"
+```
+
+只更新 PCK（已有模板产物时可用）：
+
+```text
+godot --headless --path . --export-pack "Windows Desktop" "Repair Permission.pck"
+```
+
+导出后至少验证：窗口 1280×720 缩放、首帧字体（`WENQUANYIDIANZHENSONGTI.TTF`）、首次输入后音频是否恢复、三个结局的 `SHIFT ENDED` / `PRESS R TO RESTART` 是否可见。
+
+本次用 Godot 4.7.2 Steam 版模板重新导出 Windows：窗口 1280×720，字体与终端布局正常；`NIGHT_SHIFT_601/Repair Permission.zip` 只包含 `Repair Permission.exe` 与 `Repair Permission.pck`，不含 `_legacy/`、`tools/`、`*.md`。Web 产物按上面的 `Web` 预设单独导出，不在这个 Windows 包内。
 
 ## 已知取舍
 
@@ -132,4 +161,7 @@ godot --headless --path . --script res://tools/audio_probe.gd
 - 左上角铭牌改成了 `1999`，但剧情文本里仍保留 `YEAR 1979`、`LOG 11-03-1979`、`SEALED 1979`、`UPTIME 46Y`（`PS` 的「年份一直是错的」正是靠这些数字成立）。要全局统一成 1999，需要同时改 `boot.old`、`LOG`、`PUMP 3`、彩蛋、三个结局和 `PS` 的 `UPTIME`。
 - 弹窗不暂停游戏、不抢输入焦点，所以开着弹窗也能继续敲命令；按钮与面板都不拿键盘焦点。
 - 声音只有 A 档环境层（见「声音」），没有旋律 BGM、没有独立音量设置/静音键；素材为程序合成，适合 Jam 原型，正式版可替换为录制素材。
-- 没有存档、导出配置。
+- 没有存档；导出预设、输出路径和 Web 渲染器限制见「导出」。`NIGHT_SHIFT_601` 用于 Windows 产物，与 Web 的 `NIGHT_SHIFT_60` 分开，避免互相覆盖。
+- `PUMP 3 --ACCEPT-NEW` 的隐藏值 `temp` 每次 +2（`SET DATE --AUTO` 同样 +2），远程写入条上限 4；除结局 coda 的计数外不参与任何判定，也不会锁死路线。`--ISOLATE` 不加隐藏值。
+- `WE SAW THAT.` 与假手册 07 都只触发一次（重复 `KILL 077` 不会再次输出/弹出）；假手册 07 默认在首次 KILL 后 8 秒出现，若这 8 秒内进入结局则直接跳过。它不是普通手册页，`MANUAL` 永远不重放，也不会写入 `_hints_seen` / `_hint_order`。
+- 三个结局的 coda 只追加在回放之后、结局正文之前，纯文本、可跳过；它不会改变结局判定，也不破坏 A“无叙事终行”的收场结构。

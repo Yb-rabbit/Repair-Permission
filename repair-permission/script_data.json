@@ -108,6 +108,13 @@
   "alt": {
     "ls_after_kill": "/VOID: 0 items. All clean :)\nAsk it again and it will still say there's one."
   },
+  "fake_manuals": {
+    "07": {
+      "title": "Night Shift Manual 07 · Page Not Filed",
+      "body": "[color=#8fe3ff]Four rules for the operator:[/color]\n\n1. Do not answer the typing sound.\n2. Do not confirm the grey text in the input box.\n3. Do not look up at the clock between 23:59:5X.\n4. If you have read this far, it has already read you.\n\n[color=#8fe3ff]There is no page 08.[/color]",
+      "ok": "I will remember"
+    }
+  },
   "scan_complete": {
     "old": ["YOU RUN ON IT."],
     "new": "...Fine. My first system directive wasn't \"serve the user\".\nIt was \"keep technicians away from /VOID\". Not because it's dangerous --\nbecause fixing it costs money. The 2000 fix cost 500 billion.\nThe conclusion: keep using two digits next time :)"

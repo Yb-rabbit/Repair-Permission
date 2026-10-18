@@ -106,12 +106,18 @@ func _initialize() -> void:
 	await _tick()
 	_check("hidden_temp", main.temp == 2, str(main.temp))
 	_check("bar3_value", int(main.bar3.value) == 2, str(main.bar3.value))
+	_check("bar3_max_remote", main.bar3.max_value == 4.0, str(main.bar3.max_value))
+	_check("bar3_revealed", main.bar3.modulate.a > 0.0, str(main.bar3.modulate.a))
 	_check("audio_accept_hum", main._audio.tension_on and main._audio.tension_player.playing, "")
 
+	main._clear_popups()
 	main._on_submit("KILL 077")
 	await _tick()
 	_check("void_killed", main.void_killed, "")
 	_check("audio_kill_silences_new", not main._audio.new_layer_on, "")
+	_check("kill_we_saw_that_main", main.old_text.get_parsed_text().contains("WE SAW THAT."), "")
+	await create_timer(0.3).timeout
+	_check("remote_bar_fully_revealed", main.bar3.modulate.a > 0.9, str(main.bar3.modulate.a))
 	main._on_submit("LS /VOID")
 	await _tick()
 	_check("new_side_void_zero", main.new_text.get_parsed_text().contains("0 items"), "")
@@ -135,6 +141,7 @@ func _initialize() -> void:
 	_check("scan_bar_full", int(main.scan_bar.value) == 100, str(main.scan_bar.value))
 	_check("scan_stream_found", main.old_text.get_parsed_text().contains("/HOME/TECH-077 FOUND"), "")
 	_check("scan_rewind", main.scan_found and main.scan_rewound, str(main.scan_found) + "/" + str(main.scan_rewound))
+	_check("scan_echo_accept", main.old_text.get_parsed_text().contains("REMOTE WRITE: 1"), "")
 
 	main._on_submit("FORMAT /VOID")
 	await create_timer(0.05).timeout
@@ -143,7 +150,7 @@ func _initialize() -> void:
 	_check("popup_cleared_on_ending", main._popup == null and main._popup_queue.is_empty(), "")
 	await create_timer(2.0).timeout
 	_check("replay_all_inputs", main.replay_index == main.history.size(), str(main.replay_index) + "/" + str(main.history.size()))
-	_check("ending_finished", main.ending_index == main.data.endings.format.size() and main.end_timer.is_stopped(), str(main.ending_index))
+	_check("ending_finished", main.ending_index == main.ending_lines.size() and main.end_timer.is_stopped(), str(main.ending_index))
 	var format_old: String = main.old_text.get_parsed_text()
 	_check("format_restore_loop", format_old.contains("BOOT OK") and format_old.contains("PLEASE LOG IN"), "")
 	_check("format_no_new_closing", not main.new_text.get_parsed_text().contains("Done! Good work tonight") and not main.new_text.get_parsed_text().contains("Huh? It restored you"), "")
@@ -151,6 +158,10 @@ func _initialize() -> void:
 	_check("format_no_final_line", not main.final_line.visible, main.final_line.text)
 	_check("format_end_status", main.end_status.visible and main.end_status.text == "SHIFT ENDED", main.end_status.text)
 	_check("format_restart_hint", main.restart_hint.visible and main.restart_hint.text == "PRESS R TO RESTART", main.restart_hint.text)
+	_check("format_input_hidden", not main.input_line.visible, "")
+	_check("format_coda_pump_accept", main.ending_lines.has("OLD> PUMP: REMOTE WRITE."), str(main.ending_lines))
+	_check("format_coda_remote_read", main.ending_lines.has("OLD> REMOTE DECISIONS: 1. FILE READ."), str(main.ending_lines))
+	_check("format_coda_kill", main.ending_lines.has("OLD> PROCESS ENDED. LOG CONTINUES."), str(main.ending_lines))
 
 	# B keeps the terminal visible under a dim layer, then shows the restart card.
 	main = await _fresh_main()
@@ -158,10 +169,12 @@ func _initialize() -> void:
 	main._on_submit("SHUTDOWN --VERIFY")
 	await create_timer(2.0).timeout
 	_check("shutdown_started", main.in_ending and main.ending_key == "shutdown", main.ending_key)
-	_check("shutdown_ending_finished", main.ending_index == main.data.endings.shutdown.size() and main.end_timer.is_stopped(), str(main.ending_index))
+	_check("shutdown_ending_finished", main.ending_index == main.ending_lines.size() and main.end_timer.is_stopped(), str(main.ending_index))
 	_check("shutdown_end_status", main.end_status.visible and main.end_status.text == "SHIFT ENDED", main.end_status.text)
 	_check("shutdown_restart_hint", main.restart_hint.visible and main.restart_hint.text == "PRESS R TO RESTART", main.restart_hint.text)
 	_check("shutdown_dim_screen", is_equal_approx(main.crt.color.a, 0.75), str(main.crt.color))
+	_check("shutdown_input_hidden", not main.input_line.visible, "")
+	_check("shutdown_coda_soft_gate", main.ending_lines.has("OLD> PUMP: UNSERVICED."), str(main.ending_lines))
 
 	# C requires the full scan, then can be entered directly with the overflow date.
 	main = await _fresh_main()
@@ -184,8 +197,9 @@ func _initialize() -> void:
 	_check("inherit_black_screen", is_equal_approx(main.crt.color.a, 1.0), str(main.crt.color))
 	_check("inherit_end_status", main.end_status.visible and main.end_status.text == "SHIFT ENDED", main.end_status.text)
 	_check("inherit_restart_hint", main.restart_hint.visible and main.restart_hint.text == "PRESS R TO RESTART", main.restart_hint.text)
+	_check("inherit_input_hidden", not main.input_line.visible, "")
 	_check("inherit_final_line", main.final_line.visible and main.final_line.text.contains("PATCH-Y2KW v2 DEPLOYED BY TECH-077"), main.final_line.text)
-	_check("inherit_ending_finished", main.ending_index == main.data.endings.inherit.size() and main.end_timer.is_stopped(), str(main.ending_index))
+	_check("inherit_ending_finished", main.ending_index == main.ending_lines.size() and main.end_timer.is_stopped(), str(main.ending_index))
 
 	# The documented shorthand dates must take the same route.
 	main = await _fresh_main()
@@ -264,14 +278,38 @@ func _initialize() -> void:
 	main._on_submit("FORMAT /VOID")
 	await create_timer(1.2).timeout
 	_check("soft_gate_replayed", main.replay_index == main.history.size() and main.old_text.get_parsed_text().contains("PUMP UNSERVICED. LOGGED."), "")
+	_check("soft_gate_coda", main.ending_lines.has("OLD> PUMP: UNSERVICED."), str(main.ending_lines))
 
-	# Pump handled first -> no soft-gate record.
+	# Pump handled first -> no soft-gate record; isolate leaves its own scan echo and coda.
 	main = await _fresh_main()
 	main._on_submit("PUMP 3 --ISOLATE")
 	await _tick()
+	_check("pump_choice_isolate", main.pump_choice == "isolate", main.pump_choice)
 	main._on_submit("SCAN /FULL")
 	await _tick()
 	_check("soft_gate_handled_silent", not main.history.has("* PUMP UNSERVICED. LOGGED."), str(main.history))
+	await create_timer(0.5).timeout
+	_check("scan_echo_isolate", main.old_text.get_parsed_text().contains("MANUAL SEAL: LOGGED"), "")
+	main.scan_done = true
+	main._on_submit("FORMAT /VOID")
+	await create_timer(1.2).timeout
+	_check("isolate_coda", main.ending_lines.has("OLD> PUMP: MANUAL SEAL."), str(main.ending_lines))
+
+	# KILL 077: one-shot WE SAW THAT, then fake manual 07 (never enters MANUAL).
+	main = await _fresh_main()
+	main.fake07_delay = 0.05
+	main._on_submit("KILL 077")
+	await create_timer(0.3).timeout
+	_check("kill_we_saw_that", main.old_text.get_parsed_text().contains("WE SAW THAT."), "")
+	_check("fake07_popup", is_instance_valid(main._popup) and main._popup.title_text().contains("07"), main._popup.title_text() if is_instance_valid(main._popup) else "none")
+	_check("fake07_ok_text", is_instance_valid(main._popup) and main._popup._ok_button.text == "I will remember", main._popup._ok_button.text if is_instance_valid(main._popup) else "none")
+	main._clear_popups()
+	main._on_submit("KILL 077")
+	await create_timer(0.2).timeout
+	_check("kill_we_saw_that_once", main.old_text.get_parsed_text().count("WE SAW THAT.") == 1, str(main.old_text.get_parsed_text().count("WE SAW THAT.")))
+	main._on_submit("MANUAL")
+	await _tick()
+	_check("fake07_not_in_manual", not main._hints_seen.has("07") and not main._hint_order.has("07"), str(main._hint_order))
 
 	_finish()
 
