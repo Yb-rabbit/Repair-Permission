@@ -10,7 +10,7 @@ Godot 4.7 打开项目，`F5`。主场景 `res://Main.tscn`，脚本 `res://game
 
 ```text
 res://
-├── Main.tscn          Control 场景（双 RichTextLabel / 3 ProgressBar / LineEdit / CRT 空槽 / FinalLine / RestartHint / Popups 图层 / 7 Timer）
+├── Main.tscn          Control 场景（双 RichTextLabel / 3 ProgressBar / LineEdit / CRT 空槽 / EndStatus / FinalLine / RestartHint / Popups 图层 / 7 Timer）
 ├── game.gd            全部逻辑
 ├── audio.gd           房间底噪 / 双终端待机 / 一次性音效 / ACCEPT 低频嗡鸣
 ├── audio/             8 个程序生成 WAV（无外部版权素材）
@@ -28,6 +28,8 @@ CRT 覆盖层是 `Main/CRT`（颜色 alpha 0、鼠标忽略），拿到 `crt.gds
 
 运行时全部界面文案（终端输出、输入提示、值班手册弹窗、按钮与工具提示）均为英文，对白文本集中在 `script_data.json`，界面固定文案在 `game.gd` / `popup.gd`。
 
+文本采用双轨：中文设计正典在 `story_bible.md`，英文对白 / 结局运行文本集中在 `script_data.json`（开机流与 UI 固定文案仍在 `game.gd` / `popup.gd`）。两者冲突时，玩家实际看到的逐字文本以代码与 `script_data.json` 为准，设计解释以 `story_bible.md` 为准。
+
 字体统一使用项目根目录的 `WENQUANYIDIANZHENSONGTI.TTF`（文泉驿点阵宋体），并通过 `ui_font.tres`（`FontVariation`）统一增加字间距（`spacing_glyph = 2`、`spacing_space = 2`）。`project.godot` 的 `gui/theme/custom_font` 指向 `ui_font.tres` 作为全局默认字体，`game.gd` 的 `UI_FONT` 与 `popup.gd` 的 `UI_FONT` 再对 RichTextLabel / LineEdit / 弹窗做显式覆盖。
 
 ## 命令
@@ -42,17 +44,21 @@ CRT 覆盖层是 `Main/CRT`（颜色 alpha 0、鼠标忽略），拿到 `crt.gds
 | `PUMP 3 --ISOLATE` | 走 OLD 的机械隔离 |
 | `PUMP 3 --ACCEPT-NEW` | 接受 NEW 的远程修复；隐藏值 +2 |
 | `SCAN` | 慢扫描（只是台词） |
-| `SCAN /FULL` | 15 秒进度条，NEW 中途插话两次 |
+| `SCAN /FULL` | 15 秒进度条 + 9 行文件系统流；约 74% 卡 99%，约 87% 回落到 97%，再走到 100%；NEW 中途插话两次 |
 | `LS /VOID` / `PS` / `CAT /VOID/TECH-077` | 隐藏分区、进程、文本日志 |
 | `KILL 077` | 杀掉进程；之后 NEW 的 `/VOID` 变成 0 items；开启 60 秒无输入窗口 |
 | `ID` | 房间里有几个人 |
-| `FORMAT /VOID` | 结局 A（先逐条回放你的全部输入） |
-| `SHUTDOWN --VERIFY` | 结局 B（同样先回放） |
+| `FORMAT /VOID` | 结局 A（先逐条回放你的全部输入；restore loop 后淡出至半透明黑，显示 `SHIFT ENDED` / 重开提示，无叙事终行） |
+| `SHUTDOWN --VERIFY` | 结局 B（同样先回放；播完后淡出至半透明黑，显示 `SHIFT ENDED` / 重开提示） |
 | `SET DATE 2038-01-19` | 结局 C（也可输入命令 `SET DATE 2038-1-19` / `SET DATE 38-01-19`；需先完成 `SCAN /FULL`） |
+| `SET DATE 2000-01-01` | 彩蛋：`NOTHING HAPPENED.` / `THAT WAS THE POINT.`（也接受 `2000-1-1` / `00-01-01`） |
+| `SET DATE 1979-11-03` | 彩蛋：OLD 的上电日志（也接受 `1979-11-3` / `79-11-03`） |
 
 输入匹配三层：精确 → `begins_with` 补全（例如 `PUMP` → `PUMP 3`，NEW 代跑、OLD 纠错）→ 完全不匹配走气氛回复；乱输入第 3 次触发 OLD 彩蛋。
 
 三个结局都要求先完成 `SCAN /FULL`。A / B 是明确的收场命令，永远优先；C 是独立的第三条路线，不会在 A / B 播放完后接管。C 有两个入口：`SET DATE 2038-*`，或 `KILL 077` 后连续 60 秒不输入任何命令。KILL 的静默窗口会被任意一次真实输入取消，所以 `KILL 077 → LS /VOID` 仍然安全。
+
+A / B 为 0.9 秒淡出至半透明黑（仍能隐约看到终端），C 为 0.9 秒淡出至全黑；淡出后再等 0.25 秒显示 `SHIFT ENDED` 与 `PRESS R TO RESTART`。`SHIFT ENDED` 是 UI 状态，不属于结局叙事文本；A 仍然没有叙事终行。
 
 开局输入框会预填 `LOGIN` 并全选，直接按 Enter 就会补全为 `LOGIN 077`（对应 NEW 的 “I already filled in half the login”）。
 
@@ -97,7 +103,7 @@ A 档最小声音层：没有旋律 BGM，只有“房间 + 两台机器”的�
 
 ## 调参
 
-`game.gd` 里：`scan_duration`（默认 15 秒）。
+`game.gd` 里：`scan_duration`（默认 15 秒）、`END_DIM_ALPHA`（A/B 半透明黑的黑度，默认 0.75）、`END_FADE_TIME`（0.9 秒）、`END_HINT_DELAY`（0.25 秒）。
 `Main.tscn` 里：`BootTimer.wait_time`（0.25）、`OldTimer.wait_time`（默认 3 秒）、`ScanTimer.wait_time`（0.1）、`ReplayTimer.wait_time`（0.25）、`EndTimer.wait_time`（1.4）、`InheritTimer.wait_time`（60 秒）。
 `popup.gd` 里：`WIDTH`（弹窗宽度 380）、`EDGE`（贴边留白 8）；出现位置在 `open()` 里计算（右上角，按队列层叠 26px）；`SFX_VOLUME_DB`（弹窗音效音量，默认 -10 dB），音源固定为根目录的 `connected.wav` / `disconnected.wav`。
 
@@ -107,7 +113,7 @@ A 档最小声音层：没有旋律 BGM，只有“房间 + 两台机器”的�
 godot --headless --path . --script res://tools/smoke_test.gd
 ```
 
-结果写入 `smoke_result.txt`，覆盖登录预填（Enter 信号）、命令表加载、三层匹配、提示链内容（LOG / MANUAL / ID / SCAN /FULL）、CAT 顺序保护、乱输入彩蛋、隐藏值、扫描期输入锁、弹窗（出现 / 排队 / 拖拽 / 确认关闭 / 结局清空 / 音效）、A/B 回放、C 的扫描门槛 / 直接日期入口 / KILL 静默入口 / 输入取消 / A/B 优先 / 时钟回绕 / `[PATCH]` 回放 / 黑屏、最终行与 R 重置提示，以及声音层的节点/循环/状态（当前 73/73 通过）。
+结果写入 `smoke_result.txt`，覆盖登录预填（Enter 信号）、命令表加载、三层匹配、提示链内容（LOG / MANUAL / ID / SCAN /FULL）、CAT 顺序保护、乱输入彩蛋、隐藏值、扫描期输入锁、扫描流与 99%→97% 回退、弹窗（出现 / 排队 / 拖拽 / 确认关闭 / 结局清空 / 音效）、A/B 回放、A 的 restore loop / 无 NEW 收尾 / 淡出半透明黑 / 无叙事终行 / 结束卡、B 的淡出半透明黑与结束卡、C 的扫描门槛 / 直接日期入口 / KILL 静默入口 / 输入取消 / A/B 优先 / 时钟回绕 / pre-replay 台词 / `[PATCH]` 回放 / 淡出全黑 / `PATCH-Y2KW v2` 终行 / 结束卡 / R 重置提示、两个 SET DATE 彩蛋及其短格式，以及声音层的节点/循环/状态（当前 97/97 通过）。
 
 只检查声音节点与循环参数（不实际发声）：
 
@@ -120,7 +126,9 @@ godot --headless --path . --script res://tools/audio_probe.gd
 ## 已知取舍
 
 - A / B / C 都只要求 `SCAN /FULL` 完成，不要求玩家读过手册页；如果扫描前输入 `FORMAT /VOID` / `SHUTDOWN --VERIFY`，OLD 会回 `UNKNOWN PARTITION.`。手册页只保证 04 → 05 的顺序（扫描前触发 `CAT` 会先排 04）。
-- C 的 KILL 静默窗口是 60 秒，任何真实输入都会取消；它不会在 A / B 结束后被重新启动或接管。C 的文本在 `script_data.json` 的 `endings.inherit`，计时器是 `Main/InheritTimer`；进入黑屏后会显示 `PRESS R TO RESTART`，按 R 重开。
+- A 结局是 restore loop：`FORMAT /VOID` 回放后重启到 `PLEASE LOG IN`，再淡出到半透明黑并显示 `SHIFT ENDED` / `PRESS R TO RESTART`，没有叙事终行；NEW 的两句结局收尾台词已删除，但命令确认仍保留。
+- B 结局淡出至半透明黑，保留“机器还亮着”的隐约轮廓，同时出现 `SHIFT ENDED` / `PRESS R TO RESTART`。
+- C 的 KILL 静默窗口是 60 秒，任何真实输入都会取消；它不会在 A / B 结束后被重新启动或接管。C 的 pre-replay 台词在 `script_data.json` 的 `inherit_intro`，回放后的收尾与终行在 `endings.inherit`；计时器是 `Main/InheritTimer`；全黑淡出后显示 `SHIFT ENDED` / `PRESS R TO RESTART`，随后是 `PATCH-Y2KW v2` 终行。
 - 左上角铭牌改成了 `1999`，但剧情文本里仍保留 `YEAR 1979`、`LOG 11-03-1979`、`SEALED 1979`、`UPTIME 46Y`（`PS` 的「年份一直是错的」正是靠这些数字成立）。要全局统一成 1999，需要同时改 `boot.old`、`LOG`、`PUMP 3`、彩蛋、三个结局和 `PS` 的 `UPTIME`。
 - 弹窗不暂停游戏、不抢输入焦点，所以开着弹窗也能继续敲命令；按钮与面板都不拿键盘焦点。
 - 声音只有 A 档环境层（见「声音」），没有旋律 BGM、没有独立音量设置/静音键；素材为程序合成，适合 Jam 原型，正式版可替换为录制素材。

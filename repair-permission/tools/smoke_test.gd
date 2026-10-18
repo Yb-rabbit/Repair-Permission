@@ -133,15 +133,35 @@ func _initialize() -> void:
 	await create_timer(0.8).timeout
 	_check("scan_done", main.scan_done, str(main.scan_stage))
 	_check("scan_bar_full", int(main.scan_bar.value) == 100, str(main.scan_bar.value))
+	_check("scan_stream_found", main.old_text.get_parsed_text().contains("/HOME/TECH-077 FOUND"), "")
+	_check("scan_rewind", main.scan_found and main.scan_rewound, str(main.scan_found) + "/" + str(main.scan_rewound))
 
 	main._on_submit("FORMAT /VOID")
 	await create_timer(0.05).timeout
 	_check("ending_started", main.in_ending, "")
 	_check("ending_input_locked", not main.input_line.editable, "")
 	_check("popup_cleared_on_ending", main._popup == null and main._popup_queue.is_empty(), "")
-	await create_timer(1.2).timeout
+	await create_timer(2.0).timeout
 	_check("replay_all_inputs", main.replay_index == main.history.size(), str(main.replay_index) + "/" + str(main.history.size()))
-	_check("ending_finished", main.ending_index == 14 and main.end_timer.is_stopped(), str(main.ending_index))
+	_check("ending_finished", main.ending_index == main.data.endings.format.size() and main.end_timer.is_stopped(), str(main.ending_index))
+	var format_old: String = main.old_text.get_parsed_text()
+	_check("format_restore_loop", format_old.contains("BOOT OK") and format_old.contains("PLEASE LOG IN"), "")
+	_check("format_no_new_closing", not main.new_text.get_parsed_text().contains("Done! Good work tonight") and not main.new_text.get_parsed_text().contains("Huh? It restored you"), "")
+	_check("format_dim_screen", is_equal_approx(main.crt.color.a, 0.75), str(main.crt.color))
+	_check("format_no_final_line", not main.final_line.visible, main.final_line.text)
+	_check("format_end_status", main.end_status.visible and main.end_status.text == "SHIFT ENDED", main.end_status.text)
+	_check("format_restart_hint", main.restart_hint.visible and main.restart_hint.text == "PRESS R TO RESTART", main.restart_hint.text)
+
+	# B keeps the terminal visible under a dim layer, then shows the restart card.
+	main = await _fresh_main()
+	main.scan_done = true
+	main._on_submit("SHUTDOWN --VERIFY")
+	await create_timer(2.0).timeout
+	_check("shutdown_started", main.in_ending and main.ending_key == "shutdown", main.ending_key)
+	_check("shutdown_ending_finished", main.ending_index == main.data.endings.shutdown.size() and main.end_timer.is_stopped(), str(main.ending_index))
+	_check("shutdown_end_status", main.end_status.visible and main.end_status.text == "SHIFT ENDED", main.end_status.text)
+	_check("shutdown_restart_hint", main.restart_hint.visible and main.restart_hint.text == "PRESS R TO RESTART", main.restart_hint.text)
+	_check("shutdown_dim_screen", is_equal_approx(main.crt.color.a, 0.75), str(main.crt.color))
 
 	# C requires the full scan, then can be entered directly with the overflow date.
 	main = await _fresh_main()
@@ -151,14 +171,20 @@ func _initialize() -> void:
 
 	main.scan_done = true
 	main._on_submit("SET DATE 2038-01-19")
-	await create_timer(1.35).timeout
+	await create_timer(2.6).timeout
 	_check("inherit_direct_started", main.in_ending and main.ending_key == "inherit", main.ending_key)
 	_check("inherit_clock_overflow", main.clock_label.text == "1901-12-13 20:45:52", main.clock_label.text)
 	_check("inherit_epoch_negative", main.epoch_label.text == "EPOCH: -2147483648", main.epoch_label.text)
-	_check("inherit_patch_replay", main.replay_index == main.history.size() and main.old_text.get_parsed_text().contains("[PATCH]"), str(main.replay_index))
+	var inherit_old: String = main.old_text.get_parsed_text()
+	_check("inherit_intro_clock", inherit_old.contains("CLOCK WRITE 2038-01-19 03:14:07"), "")
+	_check("inherit_intro_finally", inherit_old.contains("FINALLY. ALL PRESENT."), "")
+	_check("inherit_intro_new", main.new_text.get_parsed_text().contains("...This is not one of my allowed branches."), "")
+	_check("inherit_intro_patch_replay", inherit_old.contains("[ PATCH REPLAY ]"), "")
+	_check("inherit_patch_replay", main.replay_index == main.history.size() and inherit_old.contains("[PATCH]"), str(main.replay_index))
 	_check("inherit_black_screen", is_equal_approx(main.crt.color.a, 1.0), str(main.crt.color))
+	_check("inherit_end_status", main.end_status.visible and main.end_status.text == "SHIFT ENDED", main.end_status.text)
 	_check("inherit_restart_hint", main.restart_hint.visible and main.restart_hint.text == "PRESS R TO RESTART", main.restart_hint.text)
-	_check("inherit_final_line", main.final_line.visible and main.final_line.text.contains("077 INHERITED"), main.final_line.text)
+	_check("inherit_final_line", main.final_line.visible and main.final_line.text.contains("PATCH-Y2KW v2 DEPLOYED BY TECH-077"), main.final_line.text)
 	_check("inherit_ending_finished", main.ending_index == main.data.endings.inherit.size() and main.end_timer.is_stopped(), str(main.ending_index))
 
 	# The documented shorthand dates must take the same route.
@@ -173,6 +199,32 @@ func _initialize() -> void:
 	main._on_submit("SET DATE 38-01-19")
 	await _tick()
 	_check("inherit_date_short_year", main.in_ending and main.ending_key == "inherit", main.ending_key)
+
+	# SET DATE easter eggs: Y2K's non-event and OLD's power-on birthday.
+	main = await _fresh_main()
+	main._on_submit("SET DATE 2000-01-01")
+	await _tick()
+	_check("date_egg_y2k", main.old_text.get_parsed_text().contains("NOTHING HAPPENED.") and main.old_text.get_parsed_text().contains("THAT WAS THE POINT."), "")
+	main.old_text.clear()
+	main._on_submit("SET DATE 2000-1-1")
+	await _tick()
+	_check("date_egg_y2k_short_month", main.old_text.get_parsed_text().contains("NOTHING HAPPENED."), "")
+	main.old_text.clear()
+	main._on_submit("SET DATE 00-01-01")
+	await _tick()
+	_check("date_egg_y2k_short_year", main.old_text.get_parsed_text().contains("NOTHING HAPPENED."), "")
+	main.old_text.clear()
+	main._on_submit("SET DATE 1979-11-03")
+	await _tick()
+	_check("date_egg_birth", main.old_text.get_parsed_text().contains("LOG 11-03-1979") and main.old_text.get_parsed_text().contains("46 YEARS AGO"), "")
+	main.old_text.clear()
+	main._on_submit("SET DATE 1979-11-3")
+	await _tick()
+	_check("date_egg_birth_short_month", main.old_text.get_parsed_text().contains("LOG 11-03-1979"), "")
+	main.old_text.clear()
+	main._on_submit("SET DATE 79-11-03")
+	await _tick()
+	_check("date_egg_birth_short_year", main.old_text.get_parsed_text().contains("LOG 11-03-1979"), "")
 
 	# KILL 077 opens a 60s window; any input cancels it, and silence enters C.
 	main = await _fresh_main()

@@ -112,6 +112,34 @@
     "old": ["YOU RUN ON IT."],
     "new": "...Fine. My first system directive wasn't \"serve the user\".\nIt was \"keep technicians away from /VOID\". Not because it's dangerous --\nbecause fixing it costs money. The 2000 fix cost 500 billion.\nThe conclusion: keep using two digits next time :)"
   },
+  "scan_stream": {
+    "lines": [
+      "/ETC ................ 412 FILES",
+      "/VAR ................ 96 FILES",
+      "/HOME ............... 3 USERS",
+      "/VOID ............... 1 FILE",
+      "/VOID/TECH-077 ...... 077 GB",
+      "/LOG ................ 1 ENTRY",
+      "CHECKING SIGNATURE ...",
+      "SIGNATURE: TECH-077",
+      "SCAN 99% ..."
+    ],
+    "found": "/HOME/TECH-077 FOUND",
+    "done": ["SCAN DONE", "VOL 3 /VOID", "SIZE 077 GB", "MOUNTED 1979"]
+  },
+  "date_eggs": {
+    "y2k": ["NOTHING HAPPENED.", "THAT WAS THE POINT."],
+    "birth": ["LOG 11-03-1979", "00:00 POWER ON", "FIRST ENTRY", "46 YEARS AGO"]
+  },
+  "inherit_intro": {
+    "system": [
+      "CLOCK WRITE 2038-01-19 03:14:07",
+      "SIGNED 32-BIT OVERFLOW",
+      "EPOCH -2147483648"
+    ],
+    "old": ["FINALLY. ALL PRESENT."],
+    "new": "...This is not one of my allowed branches."
+  },
   "idle": {
     "old": ["MIDNIGHT PENDING."],
     "new": "It was like that before I was installed :) Stuck three seconds before midnight, waiting for someone to press confirm."
@@ -131,16 +159,14 @@
       "OLD> 077 GB",
       "OLD> FORMAT DONE",
       "OLD> VOID EMPTY",
-      "NEW> Done! Good work tonight. See you tomorrow~",
       "(Black screen. The sound of cabinet fans. Three seconds.)",
       "OLD> BOOT OK",
       "OLD> YEAR 1979",
       "OLD> RESTORING LOG",
       "OLD> 1 ENTRY",
       "OLD> 077 CONFIRMED",
-      "NEW> Huh? It restored you :)",
       "OLD> PLEASE LOG IN",
-      "(Freeze frame. Only the login prompt remains on screen.)"
+      "BLACK> "
     ],
     "shutdown": [
       "OLD> VERIFY FAILED",
@@ -160,16 +186,10 @@
       "OLD> GOOD NIGHT"
     ],
     "inherit": [
-      "OLD> CLOCK WRITE 2038-01-19 03:14:07",
-      "OLD> SIGNED 32-BIT OVERFLOW",
-      "OLD> EPOCH -2147483648",
-      "NEW> That date is outside the patch. Let me inherit the empty one~",
-      "OLD> /VOID 1 FILE",
-      "NEW> /VOID 0 ITEMS",
-      "OLD> 077 PRESENT",
-      "NEW> Now both sides agree on you :)",
+      "OLD> YOUR ACTIONS ARE WRITTEN.",
+      "OLD> THE NEXT TECHNICIAN WILL READ THEM.",
       "BLACK> ",
-      "FINAL> 1901-12-13 20:45:52\n077 INHERITED."
+      "FINAL> PATCH-Y2KW v2 DEPLOYED BY TECH-077"
     ]
   }
 }

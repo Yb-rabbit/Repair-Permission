@@ -23,8 +23,17 @@ const INHERIT_GLITCH_STEPS := 20
 const INHERIT_GLITCH_STEP := 0.05
 const INHERIT_GLITCH_CHARS := 360
 const GLITCH_POOL := "0123456789ABCDEF:/._-#%$"
+const SCAN_FOUND_RATIO := 0.74
+const SCAN_REWIND_RATIO := 0.87
+const SCAN_REWIND_VALUE := 97.0
+const SCAN_STREAM_STEP_RATIO := 0.06
 const BOOT_TICK := 0.25
 const BOOT_SKIP_HINT := "SKIP: ESC"
+const END_STATUS_TEXT := "SHIFT ENDED"
+const END_FADE_TIME := 0.9
+const END_HINT_DELAY := 0.25
+const END_DIM_ALPHA := 0.75   # A/B keep the terminal faintly visible underneath
+const END_BLACK_ALPHA := 1.0  # C drops to full black
 
 @onready var old_text: RichTextLabel = $VBox/Mid/OldPanel/OldText
 @onready var new_text: RichTextLabel = $VBox/Mid/NewPanel/NewText
@@ -35,6 +44,7 @@ const BOOT_SKIP_HINT := "SKIP: ESC"
 @onready var clock_label: Label = $VBox/Top/ClockLabel
 @onready var epoch_label: Label = $VBox/Top/EpochLabel
 @onready var crt: ColorRect = $CRT
+@onready var end_status: Label = $EndStatus
 @onready var final_line: Label = $FinalLine
 @onready var restart_hint: Label = $RestartHint
 @onready var popup_layer: CanvasLayer = $Popups
@@ -60,6 +70,9 @@ var scan_time := 0.0
 var scan_duration := 15.0
 var scan_stage := 0
 var scan_done := false
+var scan_found := false
+var scan_rewound := false
+var scan_stream_index := 0
 
 var pump_handled := false          # true after --ISOLATE or --ACCEPT-NEW
 var pump_gate_logged := false      # soft-gate line already recorded
@@ -78,6 +91,7 @@ var last_input_msec := 0
 var idle_egg_shown := false
 
 var new_tween: Tween
+var black_tween: Tween
 var _audio
 
 var boot_done := false                 # false -> input hidden, commands ignored
@@ -389,6 +403,17 @@ func _handle_set_date(value: String) -> void:
 					_new_say("You used the same two-digit year they did :) Same result.")
 					_trigger_ending_c()
 					return
+			var month := int(month_text)
+			var day := int(day_text)
+			var eggs: Dictionary = data.get("date_eggs", {})
+			if month == 1 and day == 1 and ((year_text.length() == 4 and year == 2000) or (year_text.length() == 2 and year == 0)):
+				var y2k_lines: Array = eggs.get("y2k", ["NOTHING HAPPENED.", "THAT WAS THE POINT."])
+				_old_say(y2k_lines)
+				return
+			if month == 11 and day == 3 and ((year_text.length() == 4 and year == 1979) or (year_text.length() == 2 and year == 79)):
+				var birth_lines: Array = eggs.get("birth", ["LOG 11-03-1979", "00:00 POWER ON", "FIRST ENTRY", "46 YEARS AGO"])
+				_old_say(birth_lines)
+				return
 	_old_say(["DATE ACCEPTED.", "RTC WRITTEN."])
 
 
@@ -532,6 +557,9 @@ func _act_scan_full() -> void:
 	_audio.on_scan_start()
 	scan_time = 0.0
 	scan_stage = 0
+	scan_found = false
+	scan_rewound = false
+	scan_stream_index = 0
 	scan_bar.value = 0
 	# Soft gate: scanning still runs, but OLD records the untouched pump once.
 	if not pump_handled and not pump_gate_logged:
@@ -571,26 +599,59 @@ func _on_inherit_timeout() -> void:
 
 func _on_scan_tick() -> void:
 	scan_time += scan_timer.wait_time
-	scan_bar.value = clampf(scan_time / scan_duration * 100.0, 0.0, 100.0)
+	_print_scan_stream()
+
 	if scan_stage == 0 and scan_time >= scan_duration / 3.0:
 		scan_stage = 1
 		_new_say("Ten seconds to go. I already have the result. Want a peek? :)")
 	elif scan_stage == 1 and scan_time >= scan_duration * 2.0 / 3.0:
 		scan_stage = 2
 		_new_say("Hey, the old screen just scanned you too. Even more thoroughly than I did.")
-	elif scan_time >= scan_duration:
-		scan_timer.stop()
-		scan_stage = 3
-		scan_done = true
-		scan_bar.value = 100.0
-		_new_say("All done. There's something in /VOID called TECH-077.")
-		var scan_old: Array = ["SCAN DONE", "VOL 3 /VOID", "SIZE 077 GB", "MOUNTED 1979"]
-		scan_old.append(str(data.scan_complete.old[0]))
-		_old_say(scan_old)
-		epoch_label.visible = true
-		_hint_scan()
-		_hint_for("SCAN /FULL")
-		_scan_confession()
+
+	var stream: Dictionary = data.get("scan_stream", {})
+	if not scan_found and scan_time >= scan_duration * SCAN_FOUND_RATIO:
+		scan_found = true
+		scan_bar.value = 99.0
+		_old_print(str(stream.get("found", "/HOME/TECH-077 FOUND")), true)
+		return
+	if scan_found and not scan_rewound and scan_time >= scan_duration * SCAN_REWIND_RATIO:
+		scan_rewound = true
+		scan_bar.value = SCAN_REWIND_VALUE
+		return
+
+	if not scan_found:
+		scan_bar.value = clampf(scan_time / maxf(scan_duration * SCAN_FOUND_RATIO, 0.001) * 74.0, 0.0, 74.0)
+	elif scan_rewound:
+		var rewind_span := maxf(scan_duration * (1.0 - SCAN_REWIND_RATIO), 0.001)
+		var tail := clampf((scan_time - scan_duration * SCAN_REWIND_RATIO) / rewind_span, 0.0, 1.0)
+		scan_bar.value = SCAN_REWIND_VALUE + tail * (100.0 - SCAN_REWIND_VALUE)
+
+	if scan_time >= scan_duration:
+		_finish_scan()
+
+
+func _print_scan_stream() -> void:
+	var stream: Dictionary = data.get("scan_stream", {})
+	var lines: Array = stream.get("lines", [])
+	while scan_stream_index < lines.size() and scan_time >= scan_duration * SCAN_STREAM_STEP_RATIO * float(scan_stream_index + 1):
+		_old_print(str(lines[scan_stream_index]), true)
+		scan_stream_index += 1
+
+
+func _finish_scan() -> void:
+	scan_timer.stop()
+	scan_stage = 3
+	scan_done = true
+	scan_bar.value = 100.0
+	_new_say("All done. There's something in /VOID called TECH-077.")
+	var stream: Dictionary = data.get("scan_stream", {})
+	var scan_old = stream.get("done", ["SCAN DONE", "VOL 3 /VOID", "SIZE 077 GB", "MOUNTED 1979"]).duplicate()
+	scan_old.append(str(data.scan_complete.old[0]))
+	_old_say(scan_old)
+	epoch_label.visible = true
+	_hint_scan()
+	_hint_for("SCAN /FULL")
+	_scan_confession()
 
 
 func _scan_confession() -> void:
@@ -618,6 +679,7 @@ func _begin_ending(key: String) -> void:
 	input_line.release_focus()
 	input_line.placeholder_text = "Ending in progress · press R to restart"
 	restart_hint.visible = false
+	end_status.visible = false
 	if key == "inherit":
 		clock_timer.stop()
 		_inherit_intro()
@@ -641,8 +703,15 @@ func _inherit_intro() -> void:
 	old_text.clear()
 	new_text.clear()
 	_old_print("[ CLOCK OVERFLOW ]", true)
+	var intro: Dictionary = data.get("inherit_intro", {})
+	for line in intro.get("system", []):
+		_old_print(str(line), true)
+	for line in intro.get("old", []):
+		_old_print(str(line))
+	var intro_new := str(intro.get("new", ""))
+	if intro_new != "":
+		_new_say(intro_new)
 	_old_print("[ PATCH REPLAY ]", true)
-	_new_say("Your last commands are still in memory. I'll patch them in order.")
 	replay_timer.start()
 
 
@@ -680,6 +749,9 @@ func _on_replay_tick() -> void:
 func _on_end_tick() -> void:
 	if ending_index >= ending_lines.size():
 		end_timer.stop()
+		if ending_key == "shutdown":
+			# B keeps the "machine still on" closing, but dims the terminal before the end card.
+			_show_black_screen(END_DIM_ALPHA, false)
 		_audio.on_ending_complete()
 		return
 	var line := str(ending_lines[ending_index])
@@ -689,23 +761,36 @@ func _on_end_tick() -> void:
 	elif line.begins_with("NEW> "):
 		_new_say(line.substr(5))
 	elif line.begins_with("BLACK> "):
-		_show_black_screen()
+		# A leaves the machine barely visible; C buries the whole terminal.
+		_show_black_screen(END_DIM_ALPHA if ending_key == "format" else END_BLACK_ALPHA)
 	elif line.begins_with("FINAL> "):
 		_show_final_line(line.substr(7))
 	else:
 		_old_print(line, true)
 
 
-func _show_black_screen() -> void:
-	crt.color = Color(0, 0, 0, 1)
+func _show_black_screen(alpha: float = END_BLACK_ALPHA, fade_audio: bool = true) -> void:
+	if black_tween and black_tween.is_valid():
+		black_tween.kill()
+	black_tween = create_tween()
+	black_tween.tween_property(crt, "color", Color(0, 0, 0, alpha), END_FADE_TIME)
+	black_tween.tween_interval(END_HINT_DELAY)
+	black_tween.tween_callback(_show_end_card)
+	if fade_audio:
+		_audio.on_black_screen()
+
+
+func _show_end_card() -> void:
+	if not is_inside_tree():
+		return
+	end_status.text = END_STATUS_TEXT
+	end_status.visible = true
 	restart_hint.visible = true
-	_audio.on_black_screen()
 
 
 func _show_final_line(text: String) -> void:
 	final_line.text = text
 	final_line.visible = true
-	restart_hint.visible = true
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
