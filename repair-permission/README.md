@@ -120,7 +120,7 @@ A 档最小声音层：没有旋律 BGM，只有“房间 + 两台机器”的�
 
 ## 调参
 
-`game.gd` 里：`scan_duration`（默认 15 秒）、`END_DIM_ALPHA`（A/B 半透明黑的黑度，默认 0.75）、`END_FADE_TIME`（0.9 秒）、`END_HINT_DELAY`（0.25 秒）、`GUIDE_IDLE_SEC`（空闲引导阈值，默认 20 秒；运行时可通过 `guide_idle_seconds` 覆盖，冒烟测试用于关闭或缩短）。
+`game.gd` 里：`scan_duration`（默认 15 秒）、`BOOT_TICK`（POST 行间隔 0.25 秒）、`BOOT_INTRO_HOLD`（标题停留 2 秒，整段冷启动约 3 秒）、`BOOT_INTRO_TITLE` / `BOOT_INTRO_SUB` / `BOOT_INTRO_STATUS`（冷启动过场文案）、`END_DIM_ALPHA`（A/B 半透明黑的黑度，默认 0.75）、`END_FADE_TIME`（0.9 秒）、`END_HINT_DELAY`（0.25 秒）、`GUIDE_IDLE_SEC`（空闲引导阈值，默认 20 秒；运行时可通过 `guide_idle_seconds` 覆盖，冒烟测试用于关闭或缩短）。
 `Main.tscn` 里：`BootTimer.wait_time`（0.25）、`OldTimer.wait_time`（基础 3 秒，运行时由 `_old_delay_seconds()` 改写）、`ScanTimer.wait_time`（0.1）、`ReplayTimer.wait_time`（0.25）、`EndTimer.wait_time`（1.4）、`InheritTimer.wait_time`（60 秒）。动态延迟常量在 `game.gd`：`OLD_DELAY_BASE` / `OLD_DELAY_DANGER` / `OLD_DELAY_NEW_PATH` / `OLD_DELAY_ENDING_WINDOW`。
 `popup.gd` 里：`WIDTH`（弹窗宽度 380）、`EDGE`（贴边留白 8）、`GUIDE_Z` / `MANUAL_Z`（引导 / 手册层级，默认 200 / 100）、`GUIDE_Y`（引导距顶 88）；Manual 出现位置在 `open()` 里计算（右上角，按 Manual 队列层叠 26px），Guide 固定在上方居中；`SFX_VOLUME_DB`（弹窗音效音量，默认 -10 dB），音源固定为根目录的 `connected.wav` / `disconnected.wav`。
 
@@ -130,7 +130,7 @@ A 档最小声音层：没有旋律 BGM，只有“房间 + 两台机器”的�
 godot --headless --path . --script res://tools/smoke_test.gd
 ```
 
-结果写入 `smoke_result.txt`，覆盖登录预填（Enter 信号）、命令表加载、三层匹配、提示链内容（LOG / MANUAL / ID / SCAN /FULL）、CAT 顺序保护、乱输入彩蛋、隐藏值、扫描期输入锁、扫描流与 99%→97% 回退、弹窗（出现 / 排队 / 拖拽 / 确认关闭 / 结局清空 / 音效）、选择回声（`MANUAL SEAL: LOGGED` / `REMOTE WRITE: 1`）、远程写入条（上限 4 / ACCEPT 后显示并同步）、A/B 回放、A 的 restore loop / 时钟重置 / EPOCH 隐藏 / 无 NEW 收尾 / 淡出半透明黑 / 无叙事终行 / 结束卡与身份码 / 输入框占位清除、B 的断电后时钟熄灭 / 淡出半透明黑 / 结束卡与身份码、C 的扫描门槛 / 直接日期入口 / KILL 静默入口 / 输入取消 / 扫描前 KILL 的窗口补启动 / A/B 优先 / 时钟回绕 / pre-replay 台词 / `[PATCH]` 回放 / 淡出全黑 / `PATCH-Y2KW v2` 终行 / 结束卡与身份码 / R 重置提示、两个 SET DATE 彩蛋及其短格式、三个结局的 coda、KILL 的 `WE SAW THAT.` 一次性与假手册 07（弹出 / 按钮文案 / 不进 MANUAL / 不重放）、输入归一化（大小写 / 全角 / 空格与 `/`、`--` 间距）、不可逆结局的完整输入保护、歧义前缀不自动执行、Tab 补全与候选循环、真实命令历史 ↑/↓、打字活动取消 KILL 窗口并刷新 idle 计时、补全剧情门槛与 KILL 后的 `SHUTDOWN --VERIFY` 建议、OLD 动态延迟四档、登录后授权弹窗与 `already reading` 回收、小写实时同化与 NEW 台词、第 5 次退格的 `YOU HESITATED.` 一次性、2px 扫描横带的显示/随扫描结束收起、KILL 0.5 秒乱码的显示/只播一次、Enter 后输入框保留焦点与可编辑状态、空闲引导（等待阈值 / 上下文文案 / 与 Manual 并存 / 最高层级 / 不进入 MANUAL / 鼠标活动重置 / 结局清空），以及声音层的节点/循环/状态（当前 195/195 通过）。
+结果写入 `smoke_result.txt`，覆盖冷启动过场（显示 / 自动交接到 POST / ESC 跳过并收起）、登录预填（Enter 信号）、命令表加载、三层匹配、提示链内容（LOG / MANUAL / ID / SCAN /FULL）、CAT 顺序保护、乱输入彩蛋、隐藏值、扫描期输入锁、扫描流与 99%→97% 回退、弹窗（出现 / 排队 / 拖拽 / 确认关闭 / 结局清空 / 音效）、选择回声（`MANUAL SEAL: LOGGED` / `REMOTE WRITE: 1`）、远程写入条（上限 4 / ACCEPT 后显示并同步）、A/B 回放、A 的 restore loop / 时钟重置 / EPOCH 隐藏 / 无 NEW 收尾 / 淡出半透明黑 / 无叙事终行 / 结束卡与身份码 / 输入框占位清除、B 的断电后时钟熄灭 / 淡出半透明黑 / 结束卡与身份码、C 的扫描门槛 / 直接日期入口 / KILL 静默入口 / 输入取消 / 扫描前 KILL 的窗口补启动 / A/B 优先 / 时钟回绕 / pre-replay 台词 / `[PATCH]` 回放 / 淡出全黑 / `PATCH-Y2KW v2` 终行 / 结束卡与身份码 / R 重置提示、两个 SET DATE 彩蛋及其短格式、三个结局的 coda、KILL 的 `WE SAW THAT.` 一次性与假手册 07（弹出 / 按钮文案 / 不进 MANUAL / 不重放）、输入归一化（大小写 / 全角 / 空格与 `/`、`--` 间距）、不可逆结局的完整输入保护、歧义前缀不自动执行、Tab 补全与候选循环、真实命令历史 ↑/↓、打字活动取消 KILL 窗口并刷新 idle 计时、补全剧情门槛与 KILL 后的 `SHUTDOWN --VERIFY` 建议、OLD 动态延迟四档、登录后授权弹窗与 `already reading` 回收、小写实时同化与 NEW 台词、第 5 次退格的 `YOU HESITATED.` 一次性、2px 扫描横带的显示/随扫描结束收起、KILL 0.5 秒乱码的显示/只播一次、Enter 后输入框保留焦点与可编辑状态、空闲引导（等待阈值 / 上下文文案 / 与 Manual 并存 / 最高层级 / 不进入 MANUAL / 鼠标活动重置 / 结局清空），以及声音层的节点/循环/状态（当前 199/199 通过）。
 
 只检查声音节点与循环参数（不实际发声）：
 
@@ -173,6 +173,7 @@ godot --headless --path . --export-pack "Windows Desktop" "Repair Permission.pck
 - B 结局在断电舞台指示后执行 `CLOCK> DARK`，时钟停在 `--:--:--`，再淡出至半透明黑，保留“机器还亮着”的隐约轮廓，同时出现 `SHIFT ENDED` / 身份码 / `PRESS R TO RESTART`。
 - C 的 KILL 静默窗口是 60 秒，从 `SCAN /FULL` 完成时开始计时；扫描前的 KILL 会在 `_finish_scan()` 里补启动，不会白烧窗口。任何真实输入都会取消；它不会在 A / B 结束后被重新启动或接管。C 的 pre-replay 台词在 `script_data.json` 的 `inherit_intro`，回放后的收尾与终行在 `endings.inherit`；计时器是 `Main/InheritTimer`；全黑淡出后显示 `SHIFT ENDED` / 身份码 / `PRESS R TO RESTART`，随后是 `PATCH-Y2KW v2` 终行。
 - 左上角铭牌改成了 `1999`，但剧情文本里仍保留 `YEAR 1979`、`LOG 11-03-1979`、`SEALED 1979`、`UPTIME 46Y`（`PS` 的「年份一直是错的」正是靠这些数字成立）。要全局统一成 1999，需要同时改 `boot.old`、`LOG`、`PUMP 3`、彩蛋、三个结局和 `PS` 的 `UPTIME`。
+- 开机先播约 1 秒的冷启动过场（黑场、绿色扫描线、标题牌、轻微断电闪烁），随后才进入原来的逐行 POST；整段开机仍可用 ESC 立即跳过，跳过会直接打印完整 POST 日志并收起过场。过场是运行时创建的 `CanvasLayer(5)`，不占 `Main.tscn` 的终端布局，也不会挡住之后的 Manual / Guide（`CanvasLayer(10)`）。
 - 弹窗不暂停游戏、不抢输入焦点，所以开着弹窗也能继续敲命令；按钮与面板都不拿键盘焦点。输入框启用 `keep_editing_on_text_submit`，按 Enter 执行后会清空旧命令并继续保留焦点与光标；点击弹窗仍可能让输入框失焦，这是预期的终端/窗口边界。
 - 空闲引导独立于 Manual 队列：最多同时存在一个 Guide，Manual 可与其并存；Guide 不进入 `MANUAL` 历史、不改变结局，也不打断正在输入的文字。鼠标移动同样算活动，避免玩家只是在阅读时被弹窗盖住。
 - 声音只有 A 档环境层（见「声音」），没有旋律 BGM、没有独立音量设置/静音键；素材为程序合成，适合 Jam 原型，正式版可替换为录制素材。

@@ -29,7 +29,11 @@ const SCAN_REWIND_RATIO := 0.87
 const SCAN_REWIND_VALUE := 97.0
 const SCAN_STREAM_STEP_RATIO := 0.06
 const BOOT_TICK := 0.25
+const BOOT_INTRO_HOLD := 2.0  # title hold; full cold start lands at about 3s
 const BOOT_SKIP_HINT := "SKIP: ESC"
+const BOOT_INTRO_TITLE := "REPAIR PERMISSION"
+const BOOT_INTRO_SUB := "NIGHT SHIFT TERMINAL // COLD START"
+const BOOT_INTRO_STATUS := "POST // MEM 640K // RTC ???"
 const END_STATUS_TEXT := "SHIFT ENDED"
 const END_FADE_TIME := 0.9
 const END_HINT_DELAY := 0.25
@@ -146,6 +150,19 @@ var black_tween: Tween
 var scan_band_tween: Tween
 var _audio
 
+# Cold-start overlay. It is built in code so Main.tscn stays the terminal layout.
+var _boot_layer: CanvasLayer
+var _boot_intro: Control
+var _boot_line: ColorRect
+var _boot_sweep: ColorRect
+var _boot_title: Label
+var _boot_sub: Label
+var _boot_status: Label
+var _boot_tag: Label
+var _boot_skip: Label
+var _boot_intro_tween: Tween
+var _boot_intro_token := 0
+
 var boot_done := false                 # false -> input hidden, commands ignored
 var boot_index := 0
 var boot_lines: Array[String] = [
@@ -256,6 +273,112 @@ func _setup_ui() -> void:
 	crt.color = Color(0, 0, 0, 0)
 	scan_band.visible = false
 	glitch_text.visible = false
+	_build_boot_intro()
+
+
+func _build_boot_intro() -> void:
+	_boot_layer = CanvasLayer.new()
+	_boot_layer.layer = 5
+	add_child(_boot_layer)
+
+	_boot_intro = Control.new()
+	_boot_intro.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boot_intro.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_boot_layer.add_child(_boot_intro)
+
+	var black := ColorRect.new()
+	black.color = Color(0, 0, 0, 1)
+	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	black.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_boot_intro.add_child(black)
+
+	# A thin green beam expands from the centre, like a CRT finding its raster.
+	_boot_line = ColorRect.new()
+	_boot_line.color = Color(0.588235, 1, 0.658824, 0.92)
+	_boot_line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boot_line.set_anchors_preset(Control.PRESET_CENTER)
+	_boot_line.offset_left = -1.0
+	_boot_line.offset_top = -1.0
+	_boot_line.offset_right = 1.0
+	_boot_line.offset_bottom = 1.0
+	_boot_line.modulate.a = 0.0
+	_boot_intro.add_child(_boot_line)
+
+	var center := CenterContainer.new()
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_boot_intro.add_child(center)
+
+	var box := VBoxContainer.new()
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 8)
+	center.add_child(box)
+
+	_boot_title = _make_boot_label(BOOT_INTRO_TITLE, 34, Color(0.588235, 1, 0.658824, 1))
+	_boot_title.add_theme_color_override("font_outline_color", Color(0.588235, 1, 0.658824, 0.18))
+	_boot_title.add_theme_constant_override("outline_size", 3)
+	_boot_title.modulate.a = 0.0
+	box.add_child(_boot_title)
+
+	var rule := ColorRect.new()
+	rule.color = Color(0.588235, 1, 0.658824, 0.34)
+	rule.custom_minimum_size = Vector2(300, 1)
+	rule.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(rule)
+
+	_boot_sub = _make_boot_label(BOOT_INTRO_SUB, 12, Color(0.376471, 0.705882, 0.443137, 1))
+	_boot_sub.modulate.a = 0.0
+	box.add_child(_boot_sub)
+
+	_boot_status = _make_boot_label(BOOT_INTRO_STATUS, 10, Color(0.588235, 1, 0.658824, 0.7))
+	_boot_status.modulate.a = 0.0
+	box.add_child(_boot_status)
+
+	_boot_tag = _make_boot_label("LD60 // BOOT ROM", 10, Color(0.376471, 0.705882, 0.443137, 1))
+	_boot_tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_boot_tag.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_boot_tag.offset_left = 24.0
+	_boot_tag.offset_top = 18.0
+	_boot_tag.offset_right = 260.0
+	_boot_tag.offset_bottom = 38.0
+	_boot_tag.modulate.a = 0.0
+	_boot_intro.add_child(_boot_tag)
+
+	_boot_skip = _make_boot_label("ESC // SKIP", 11, Color(0.588235, 1, 0.658824, 0.8))
+	_boot_skip.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_boot_skip.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	_boot_skip.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_boot_skip.offset_left = -180.0
+	_boot_skip.offset_top = -42.0
+	_boot_skip.offset_right = -24.0
+	_boot_skip.offset_bottom = -18.0
+	_boot_skip.modulate.a = 0.0
+	_boot_intro.add_child(_boot_skip)
+
+	# Very faint interference sweep; it crosses the title during the power-on.
+	_boot_sweep = ColorRect.new()
+	_boot_sweep.color = Color(0.588235, 1, 0.658824, 0.04)
+	_boot_sweep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boot_sweep.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_boot_sweep.offset_top = 0.0
+	_boot_sweep.offset_bottom = 2.0
+	_boot_intro.add_child(_boot_sweep)
+
+	_boot_intro.visible = false
+
+
+func _make_boot_label(text: String, font_size: int, color: Color) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_override("font", UI_FONT)
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", color)
+	return label
 
 
 func _prefill_login() -> void:
@@ -272,6 +395,57 @@ func _start_boot() -> void:
 	boot_index = 0
 	boot_timer.wait_time = BOOT_TICK
 	_show_skip_hint()
+	if _audio:
+		_audio.play_relay()
+	_boot_intro_token += 1
+	_play_boot_intro(_boot_intro_token)
+
+
+func _play_boot_intro(token: int) -> void:
+	if _boot_intro == null:
+		boot_timer.start()
+		return
+	if _boot_intro_tween and _boot_intro_tween.is_valid():
+		_boot_intro_tween.kill()
+	var vp := get_viewport_rect().size
+	_boot_intro.visible = true
+	_boot_intro.modulate.a = 1.0
+	_boot_line.modulate.a = 0.0
+	_boot_line.offset_left = -1.0
+	_boot_line.offset_right = 1.0
+	_boot_title.modulate.a = 0.0
+	_boot_sub.modulate.a = 0.0
+	_boot_status.modulate.a = 0.0
+	_boot_tag.modulate.a = 0.0
+	_boot_skip.modulate.a = 0.0
+	_boot_sweep.position = Vector2(0.0, -4.0)
+	_boot_sweep.size = Vector2(vp.x, 2.0)
+
+	var tween := create_tween()
+	_boot_intro_tween = tween
+	tween.tween_property(_boot_line, "modulate:a", 0.92, 0.06)
+	tween.parallel().tween_property(_boot_line, "offset_left", -vp.x * 0.5, 0.18).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+	tween.parallel().tween_property(_boot_line, "offset_right", vp.x * 0.5, 0.18).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+	tween.tween_property(_boot_line, "modulate:a", 0.0, 0.10)
+	tween.tween_property(_boot_title, "modulate:a", 1.0, 0.18)
+	tween.parallel().tween_property(_boot_sub, "modulate:a", 1.0, 0.18)
+	tween.parallel().tween_property(_boot_status, "modulate:a", 0.7, 0.18)
+	tween.parallel().tween_property(_boot_tag, "modulate:a", 0.7, 0.18)
+	tween.parallel().tween_property(_boot_skip, "modulate:a", 0.75, 0.18)
+	tween.parallel().tween_property(_boot_sweep, "position", Vector2(0.0, vp.y), 0.38).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	# Let the title breathe so the cold start reads before POST takes over.
+	tween.tween_interval(BOOT_INTRO_HOLD)
+	# Two quick brown-outs sell the CRT without a full-screen flash.
+	tween.tween_property(_boot_intro, "modulate:a", 0.62, 0.03)
+	tween.tween_property(_boot_intro, "modulate:a", 1.0, 0.04)
+	tween.tween_property(_boot_intro, "modulate:a", 0.78, 0.03)
+	tween.tween_property(_boot_intro, "modulate:a", 1.0, 0.04)
+	tween.tween_property(_boot_intro, "modulate:a", 0.0, 0.20)
+	await tween.finished
+	if token != _boot_intro_token or boot_done:
+		return
+	_boot_intro.visible = false
+	_boot_intro.modulate.a = 1.0
 	boot_timer.start()
 
 
@@ -300,6 +474,13 @@ func _boot_print(line: String, small := false) -> void:
 func _finish_boot(skip := false) -> void:
 	if boot_done:
 		return
+	# Cancel the intro coroutine/tween before printing the skipped log.
+	_boot_intro_token += 1
+	if _boot_intro_tween and _boot_intro_tween.is_valid():
+		_boot_intro_tween.kill()
+	if _boot_intro:
+		_boot_intro.visible = false
+		_boot_intro.modulate.a = 1.0
 	boot_timer.stop()
 	if skip:
 		while boot_index < boot_lines.size():

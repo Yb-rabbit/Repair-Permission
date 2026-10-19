@@ -19,13 +19,19 @@ func _initialize() -> void:
 	await create_timer(0.25).timeout
 	_check("boot_input_hidden", not main.boot_done and not main.input_line.visible, "")
 	_check("boot_skip_hint", main.restart_hint.visible and main.restart_hint.text == "SKIP: ESC", main.restart_hint.text)
+	_check("boot_intro_visible", main._boot_intro.visible and main._boot_title.text == "REPAIR PERMISSION", main._boot_title.text)
 	main._on_submit("HELP")
 	_check("boot_input_ignored", main.history.is_empty(), str(main.history))
+	# The cold-start intro must hand off to the POST lines on its own.
+	await create_timer(3.4).timeout
+	_check("boot_intro_auto_reveal", not main._boot_intro.visible, str(main._boot_intro.visible))
+	_check("boot_lines_after_intro", not main.boot_timer.is_stopped() and main.boot_index > 0 and not main.input_line.visible, str(main.boot_index))
 	var esc := InputEventKey.new()
 	esc.keycode = KEY_ESCAPE
 	esc.pressed = true
 	main._unhandled_key_input(esc)        # smoke test skips the 15-line boot sequence
 	_check("boot_skip_esc", main.boot_done, "")
+	_check("boot_intro_skip_hidden", not main._boot_intro.visible, "")
 	_check("boot_lines_written", main.old_text.get_parsed_text().contains("REPAIR PERMISSION // NIGHT SHIFT") and main.old_text.get_parsed_text().contains("READY."), "")
 	_check("boot_skip_hint_hidden", not main.restart_hint.visible, "")
 	_check("audio_room_and_old_layers", main._audio != null and main._audio.room_player.playing and main._audio.old_player.playing, "")
