@@ -10,7 +10,7 @@ Godot 4.7 打开项目，`F5`。主场景 `res://Main.tscn`，脚本 `res://game
 
 ```text
 res://
-├── Main.tscn          Control 场景（双 RichTextLabel / 3 ProgressBar / LineEdit / CRT 空槽 / EndStatus / FinalLine / RestartHint / Popups 图层 / 7 Timer）
+├── Main.tscn          Control 场景（双 RichTextLabel / 3 ProgressBar / LineEdit / CRT 空槽 / EndStatus / EndTag / FinalLine / RestartHint / Popups 图层 / 7 Timer）
 ├── game.gd            全部逻辑
 ├── audio.gd           房间底噪 / 双终端待机 / 一次性音效 / ACCEPT 低频嗡鸣
 ├── audio/             8 个程序生成 WAV（无外部版权素材）
@@ -46,7 +46,7 @@ CRT 覆盖层是 `Main/CRT`（颜色 alpha 0、鼠标忽略），拿到 `crt.gds
 | `SCAN` | 慢扫描（只是台词） |
 | `SCAN /FULL` | 15 秒进度条 + 9 行文件系统流；约 74% 卡 99%，约 87% 回落到 97%，再走到 100%；NEW 中途插话两次 |
 | `LS /VOID` / `PS` / `CAT /VOID/TECH-077` | 隐藏分区、进程、文本日志 |
-| `KILL 077` | 杀掉进程；全游戏仅一次 OLD `WE SAW THAT.`；8 秒后弹出假手册 07；之后 NEW 的 `/VOID` 变成 0 items；开启 60 秒无输入窗口 |
+| `KILL 077` | 杀掉进程；全游戏仅一次 OLD `WE SAW THAT.`；8 秒后弹出假手册 07；之后 NEW 的 `/VOID` 变成 0 items；扫描完成后开启 60 秒无输入窗口（扫描前 KILL 会先记账，扫描完成时才启动） |
 | `ID` | 房间里有几个人 |
 | `FORMAT /VOID` | 结局 A（先逐条回放你的全部输入；restore loop 后淡出至半透明黑，显示 `SHIFT ENDED` / 重开提示，无叙事终行） |
 | `SHUTDOWN --VERIFY` | 结局 B（同样先回放；播完后淡出至半透明黑，显示 `SHIFT ENDED` / 重开提示） |
@@ -54,15 +54,21 @@ CRT 覆盖层是 `Main/CRT`（颜色 alpha 0、鼠标忽略），拿到 `crt.gds
 | `SET DATE 2000-01-01` | 彩蛋：`NOTHING HAPPENED.` / `THAT WAS THE POINT.`（也接受 `2000-1-1` / `00-01-01`） |
 | `SET DATE 1979-11-03` | 彩蛋：OLD 的上电日志（也接受 `1979-11-3` / `79-11-03`） |
 
-输入匹配三层：精确 → `begins_with` 补全（例如 `PUMP` → `PUMP 3`，NEW 代跑、OLD 纠错）→ 完全不匹配走气氛回复；乱输入第 3 次触发 OLD 彩蛋。
+输入匹配三层：精确 → 归一化/紧凑前缀补全（忽略大小写、全角字符、空格以及 `/`、`--` 的间距，例如 `PUMP` → `PUMP 3`、`SCAN/FULL` → `SCAN /FULL`）→ 多候选时取最长公共前缀；只有公共前缀本身是完整命令才自动执行，否则进入歧义态，不再替玩家挑最短命令。`FORMAT /VOID` 与 `SHUTDOWN --VERIFY` 必须完整输入，`FO` / `SH` 只会收到 `TYPE IT IN FULL.`，不能用前缀或补全直接触发不可逆结局。
 
-三个结局都要求先完成 `SCAN /FULL`。A / B 是明确的收场命令，永远优先；C 是独立的第三条路线，不会在 A / B 播放完后接管。C 有两个入口：`SET DATE 2038-*`，或 `KILL 077` 后连续 60 秒不输入任何命令。KILL 的静默窗口会被任意一次真实输入取消，所以 `KILL 077 → LS /VOID` 仍然安全。
+输入框右侧的灰色提示只展示当前已解锁的命令：Tab 补全/循环候选，Enter 才执行；↑ / ↓ 调取真实命令历史（OLD 的 `* ` 记录不混入）。首次 `SCAN /FULL` 后才提示隐藏分区命令，读过 `CAT /VOID/TECH-077` 后才提示 `KILL 077` / A / B；KILL 且读过文件后，空输入会建议 `SHUTDOWN --VERIFY`。
+
+三个结局都要求先完成 `SCAN /FULL`。A / B 是明确的收场命令，永远优先；C 是独立的第三条路线，不会在 A / B 播放完后接管。C 有两个入口：`SET DATE 2038-*`，或 `KILL 077` 后连续 60 秒不输入任何命令。KILL 的静默窗口从扫描完成时开始计时；扫描前就 KILL 不会浪费窗口，而是在 `_finish_scan()` 里补启动。窗口会被任意一次真实输入（包括尚未提交的打字）取消，所以 `KILL 077 → LS /VOID` 仍然安全。
 
 回放结束后、结局正文开始前，OLD 会先输出 2–3 行行动记录（coda），把这一局的选择钉在日志里：`PUMP: MANUAL SEAL.` / `PUMP: REMOTE WRITE.` / `PUMP: UNSERVICED.`，远程决策次数与是否读过 `CAT /VOID/TECH-077`，以及 `PROCESS ENDED. LOG CONTINUES.` 或乱输入条数。coda 只描述已发生的事，不改变结局判定。
 
 A / B 为 0.9 秒淡出至半透明黑（仍能隐约看到终端），C 为 0.9 秒淡出至全黑；淡出后再等 0.25 秒显示 `SHIFT ENDED` 与 `PRESS R TO RESTART`。`SHIFT ENDED` 是 UI 状态，不属于结局叙事文本；A 仍然没有叙事终行。
 
-开局输入框会预填 `LOGIN` 并全选，直接按 Enter 就会补全为 `LOGIN 077`（对应 NEW 的 “I already filled in half the login”）。
+三个结局在 `SHIFT ENDED` 与叙事终行之间显示身份码：`077-A · VOID EMPTY`、`077-B · STILL HERE`、`077-C · INHERIT`。它由 `Main/EndTag` 渲染（14pt、半透明绿），文本来自 `script_data.json` 的 `ending_meta`；A/B 的身份码只负责命名，不替它们补叙事终行，C 仍额外保留 `PATCH-Y2KW v2 DEPLOYED BY TECH-077`。
+
+A 的 restore loop 在 `BOOT OK` 之后执行内部指令 `CLOCK> RESET`：时钟回到 `99-12-31 23:59:5x` 并继续爬升，EPOCH 隐藏。B 在断电舞台指示后执行 `CLOCK> DARK`：时钟停在 `--:--:--`，EPOCH 隐藏。两条 `CLOCK>` 都是 `script_data.json` 的结局内部指令，不进入 HELP。
+
+开局输入框会预填 `LOGIN` 并全选，直接按 Enter 就会补全为 `LOGIN 077`（对应 NEW 的 “I already filled in half the login”）；也可以按 Tab 先接受右侧灰色的 `LOGIN 077`。
 
 ## 提示弹窗（值班手册）
 
@@ -116,7 +122,7 @@ A 档最小声音层：没有旋律 BGM，只有“房间 + 两台机器”的�
 godot --headless --path . --script res://tools/smoke_test.gd
 ```
 
-结果写入 `smoke_result.txt`，覆盖登录预填（Enter 信号）、命令表加载、三层匹配、提示链内容（LOG / MANUAL / ID / SCAN /FULL）、CAT 顺序保护、乱输入彩蛋、隐藏值、扫描期输入锁、扫描流与 99%→97% 回退、弹窗（出现 / 排队 / 拖拽 / 确认关闭 / 结局清空 / 音效）、选择回声（`MANUAL SEAL: LOGGED` / `REMOTE WRITE: 1`）、远程写入条（上限 4 / ACCEPT 后显示并同步）、A/B 回放、A 的 restore loop / 无 NEW 收尾 / 淡出半透明黑 / 无叙事终行 / 结束卡 / 输入框占位清除、B 的淡出半透明黑与结束卡、C 的扫描门槛 / 直接日期入口 / KILL 静默入口 / 输入取消 / A/B 优先 / 时钟回绕 / pre-replay 台词 / `[PATCH]` 回放 / 淡出全黑 / `PATCH-Y2KW v2` 终行 / 结束卡 / R 重置提示、两个 SET DATE 彩蛋及其短格式、三个结局的 coda、KILL 的 `WE SAW THAT.` 一次性与假手册 07（弹出 / 按钮文案 / 不进 MANUAL / 不重放），以及声音层的节点/循环/状态（当前 118/118 通过）。
+结果写入 `smoke_result.txt`，覆盖登录预填（Enter 信号）、命令表加载、三层匹配、提示链内容（LOG / MANUAL / ID / SCAN /FULL）、CAT 顺序保护、乱输入彩蛋、隐藏值、扫描期输入锁、扫描流与 99%→97% 回退、弹窗（出现 / 排队 / 拖拽 / 确认关闭 / 结局清空 / 音效）、选择回声（`MANUAL SEAL: LOGGED` / `REMOTE WRITE: 1`）、远程写入条（上限 4 / ACCEPT 后显示并同步）、A/B 回放、A 的 restore loop / 时钟重置 / EPOCH 隐藏 / 无 NEW 收尾 / 淡出半透明黑 / 无叙事终行 / 结束卡与身份码 / 输入框占位清除、B 的断电后时钟熄灭 / 淡出半透明黑 / 结束卡与身份码、C 的扫描门槛 / 直接日期入口 / KILL 静默入口 / 输入取消 / 扫描前 KILL 的窗口补启动 / A/B 优先 / 时钟回绕 / pre-replay 台词 / `[PATCH]` 回放 / 淡出全黑 / `PATCH-Y2KW v2` 终行 / 结束卡与身份码 / R 重置提示、两个 SET DATE 彩蛋及其短格式、三个结局的 coda、KILL 的 `WE SAW THAT.` 一次性与假手册 07（弹出 / 按钮文案 / 不进 MANUAL / 不重放）、输入归一化（大小写 / 全角 / 空格与 `/`、`--` 间距）、不可逆结局的完整输入保护、歧义前缀不自动执行、Tab 补全与候选循环、真实命令历史 ↑/↓、打字活动取消 KILL 窗口并刷新 idle 计时、补全剧情门槛与 KILL 后的 `SHUTDOWN --VERIFY` 建议，以及声音层的节点/循环/状态（当前 162/162 通过）。
 
 只检查声音节点与循环参数（不实际发声）：
 
@@ -148,16 +154,16 @@ godot --headless --path . --export-release "Windows Desktop" "../../导出包/NI
 godot --headless --path . --export-pack "Windows Desktop" "Repair Permission.pck"
 ```
 
-导出后至少验证：窗口 1280×720 缩放、首帧字体（`WENQUANYIDIANZHENSONGTI.TTF`）、首次输入后音频是否恢复、三个结局的 `SHIFT ENDED` / `PRESS R TO RESTART` 是否可见。
+导出后至少验证：窗口 1280×720 缩放、首帧字体（`WENQUANYIDIANZHENSONGTI.TTF`）、首次输入后音频是否恢复、三个结局的 `SHIFT ENDED` / 身份码 / `PRESS R TO RESTART` 是否可见且不与终行重叠。
 
 本次用 Godot 4.7.2 Steam 版模板重新导出 Windows：窗口 1280×720，字体与终端布局正常；`NIGHT_SHIFT_601/Repair Permission.zip` 只包含 `Repair Permission.exe` 与 `Repair Permission.pck`，不含 `_legacy/`、`tools/`、`*.md`。Web 产物按上面的 `Web` 预设单独导出，不在这个 Windows 包内。
 
 ## 已知取舍
 
 - A / B / C 都只要求 `SCAN /FULL` 完成，不要求玩家读过手册页；如果扫描前输入 `FORMAT /VOID` / `SHUTDOWN --VERIFY`，OLD 会回 `UNKNOWN PARTITION.`。手册页只保证 04 → 05 的顺序（扫描前触发 `CAT` 会先排 04）。
-- A 结局是 restore loop：`FORMAT /VOID` 回放后重启到 `PLEASE LOG IN`，再淡出到半透明黑并显示 `SHIFT ENDED` / `PRESS R TO RESTART`，没有叙事终行；NEW 的两句结局收尾台词已删除，但命令确认仍保留。
-- B 结局淡出至半透明黑，保留“机器还亮着”的隐约轮廓，同时出现 `SHIFT ENDED` / `PRESS R TO RESTART`。
-- C 的 KILL 静默窗口是 60 秒，任何真实输入都会取消；它不会在 A / B 结束后被重新启动或接管。C 的 pre-replay 台词在 `script_data.json` 的 `inherit_intro`，回放后的收尾与终行在 `endings.inherit`；计时器是 `Main/InheritTimer`；全黑淡出后显示 `SHIFT ENDED` / `PRESS R TO RESTART`，随后是 `PATCH-Y2KW v2` 终行。
+- A 结局是 restore loop：`FORMAT /VOID` 回放后重启到 `PLEASE LOG IN` / `> LOGIN`，时钟被 `CLOCK> RESET` 拨回 `99-12-31 23:59:5x` 并继续爬升；再淡出到半透明黑并显示 `SHIFT ENDED` / 身份码 / `PRESS R TO RESTART`，没有叙事终行；NEW 的两句结局收尾台词已删除，但命令确认仍保留。
+- B 结局在断电舞台指示后执行 `CLOCK> DARK`，时钟停在 `--:--:--`，再淡出至半透明黑，保留“机器还亮着”的隐约轮廓，同时出现 `SHIFT ENDED` / 身份码 / `PRESS R TO RESTART`。
+- C 的 KILL 静默窗口是 60 秒，从 `SCAN /FULL` 完成时开始计时；扫描前的 KILL 会在 `_finish_scan()` 里补启动，不会白烧窗口。任何真实输入都会取消；它不会在 A / B 结束后被重新启动或接管。C 的 pre-replay 台词在 `script_data.json` 的 `inherit_intro`，回放后的收尾与终行在 `endings.inherit`；计时器是 `Main/InheritTimer`；全黑淡出后显示 `SHIFT ENDED` / 身份码 / `PRESS R TO RESTART`，随后是 `PATCH-Y2KW v2` 终行。
 - 左上角铭牌改成了 `1999`，但剧情文本里仍保留 `YEAR 1979`、`LOG 11-03-1979`、`SEALED 1979`、`UPTIME 46Y`（`PS` 的「年份一直是错的」正是靠这些数字成立）。要全局统一成 1999，需要同时改 `boot.old`、`LOG`、`PUMP 3`、彩蛋、三个结局和 `PS` 的 `UPTIME`。
 - 弹窗不暂停游戏、不抢输入焦点，所以开着弹窗也能继续敲命令；按钮与面板都不拿键盘焦点。
 - 声音只有 A 档环境层（见「声音」），没有旋律 BGM、没有独立音量设置/静音键；素材为程序合成，适合 Jam 原型，正式版可替换为录制素材。

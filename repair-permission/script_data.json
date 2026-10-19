@@ -10,7 +10,7 @@
       "action": "none"
     },
     "HELP": {
-      "old": ["COMMANDS", "STATUS", "LOG", "ID", "PUMP", "SCAN", "NO UNDO"],
+      "old": ["COMMANDS", "STATUS", "LOG", "ID", "MANUAL", "PUMP", "SCAN", "NO UNDO"],
       "new": "HELP / STATUS / LOG / ID / PUMP / SCAN, plus UNDO to undo your last step.\nType MANUAL to reopen the manual. Can't remember? I'll remember for you :)",
       "action": "none"
     },
@@ -160,6 +160,11 @@
     ]
   },
   "egg": ["THIRD ERROR", "SAME AS 1979", "ONLY YOU"],
+  "ending_meta": {
+    "format": { "code": "077-A", "name": "VOID EMPTY" },
+    "shutdown": { "code": "077-B", "name": "STILL HERE" },
+    "inherit": { "code": "077-C", "name": "INHERIT" }
+  },
   "endings": {
     "format": [
       "OLD> FORMAT START",
@@ -168,11 +173,13 @@
       "OLD> VOID EMPTY",
       "(Black screen. The sound of cabinet fans. Three seconds.)",
       "OLD> BOOT OK",
+      "CLOCK> RESET",
       "OLD> YEAR 1979",
       "OLD> RESTORING LOG",
       "OLD> 1 ENTRY",
       "OLD> 077 CONFIRMED",
       "OLD> PLEASE LOG IN",
+      "> LOGIN",
       "BLACK> "
     ],
     "shutdown": [
@@ -183,6 +190,7 @@
       "OLD> SHUTDOWN IN 10",
       "OLD> 5",
       "(Power cut. NEW's screen goes dark first. OLD is still lit.)",
+      "CLOCK> DARK",
       "OLD> POWER NONE",
       "OLD> STILL HERE",
       "NEW> I'll keep the light on for you :)",

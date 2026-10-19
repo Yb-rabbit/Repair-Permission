@@ -100,26 +100,26 @@
 | 三结局分岔 | 见§5 |
 ---
 ## 5. 三个结局
-共同结构:先逐条回放玩家全部输入(OLD记录一切的机制化),然后各自的终场。三个结局都要求SCAN /FULL完成;A/B是明确命令永远优先,C是独立路线不接管。
+共同结构:先逐条回放玩家全部输入(OLD记录一切的机制化),然后各自的终场。三个结局都要求SCAN /FULL完成;A/B是明确命令永远优先,C是独立路线不接管。结束卡在UI状态`SHIFT ENDED`下方显示身份码`077-A · VOID EMPTY` / `077-B · STILL HERE` / `077-C · INHERIT`,再往下才是各结局自己的终行(A无叙事终行,C有专用终行)。身份码只命名结局,不改变任何判定。
 ### 结局A · FORMAT /VOID(删除)
 - **动作**:格式化隐藏分区。补丁、记录、上一位的痕迹,全部抹掉。
 - **回放**:OLD逐条念出你的全部输入——它记录的证明,然后和记录一起被删除。
 - **哲学**:干净,但下一个人会重蹈覆辙。你在删掉历史的同时删掉了教训。
-- **终场**:FORMAT完成后黑屏,机柜风扇响三秒;随后`BOOT OK` / `YEAR 1979` / `RESTORING LOG` / `1 ENTRY` / `077 CONFIRMED` / `PLEASE LOG IN`,再0.9秒淡出至半透明黑,0.25秒后显示UI状态`SHIFT ENDED` / `PRESS R TO RESTART`,无叙事终行。NEW不再有结局收尾台词,但`FORMAT /VOID`的命令确认仍保留。
-- **restore loop**:删除历史不等于删除循环;机器重启后仍回到登录提示,等待下一位TECH-077。这是A结局的正式设定。
+- **终场**:FORMAT完成后黑屏,机柜风扇响三秒;随后`BOOT OK` / `YEAR 1979` / `RESTORING LOG` / `1 ENTRY` / `077 CONFIRMED` / `PLEASE LOG IN` / `> LOGIN`,再0.9秒淡出至半透明黑,0.25秒后显示UI状态`SHIFT ENDED`与身份码`077-A · VOID EMPTY`,无叙事终行。NEW不再有结局收尾台词,但`FORMAT /VOID`的命令确认仍保留。
+- **restore loop**:删除历史不等于删除循环;时钟在`BOOT OK`后被`CLOCK> RESET`拨回`99-12-31 23:59:5x`并继续爬升,EPOCH隐藏。机器重启后仍回到登录提示,等待下一位TECH-077。这是A结局的正式设定。
 ### 结局B · SHUTDOWN --VERIFY(离开)
 - **动作**:正常关机流程。什么都不解决。
 - **回放**:同样回放,但**这条命令可能不是玩家自己敲的**(KILL后灰色补全陷阱)。回放中出现玩家没有输入过的命令,才是B的真正恐怖。
 - **哲学**:你走了,机器明天还会开机。NEW的指令完美执行。
-- **终场**:NEW: `晚安 :) 明天见。` OLD不回复。结局播完后0.9秒淡出至半透明黑,0.25秒后显示UI状态`SHIFT ENDED` / `PRESS R TO RESTART`,保留"机器还亮着"的隐约轮廓。
+- **终场**:NEW: `晚安 :) 明天见。` OLD不回复。断电舞台指示后`CLOCK> DARK`让时钟停在`--:--:--`、EPOCH隐藏;结局播完后0.9秒淡出至半透明黑,0.25秒后显示UI状态`SHIFT ENDED`与身份码`077-B · STILL HERE`,保留"机器还亮着"的隐约轮廓。
 ### 结局C · INHERIT(继承)
 - **入口**:`SET DATE 2038-01-19`(或2038-1-19,或两位数38-01-19——窗口法回收);或KILL 077后60秒完全静默——**你删掉了它,但沉默本身触发了继承**。
-- **序列**:时钟翻为1901-12-13 20:45:52(真实回绕值)→双终端乱码1秒→OLD系统行`CLOCK WRITE 2038-01-19 03:14:07` / `SIGNED 32-BIT OVERFLOW` / `EPOCH -2147483648`→OLD: `FINALLY. ALL PRESENT.`→NEW: `...This is not one of my allowed branches.`→回放全部输入,每条加`[PATCH]`前缀→OLD: `YOUR ACTIONS ARE WRITTEN.` / `THE NEXT TECHNICIAN WILL READ THEM.`→0.9秒淡出至全黑,0.25秒后显示UI状态`SHIFT ENDED` / `PRESS R TO RESTART`,随后终行:
+- **序列**:时钟翻为1901-12-13 20:45:52(真实回绕值)→双终端乱码1秒→OLD系统行`CLOCK WRITE 2038-01-19 03:14:07` / `SIGNED 32-BIT OVERFLOW` / `EPOCH -2147483648`→OLD: `FINALLY. ALL PRESENT.`→NEW: `...This is not one of my allowed branches.`→回放全部输入,每条加`[PATCH]`前缀→OLD: `YOUR ACTIONS ARE WRITTEN.` / `THE NEXT TECHNICIAN WILL READ THEM.`→0.9秒淡出至全黑,0.25秒后显示UI状态`SHIFT ENDED`与身份码`077-C · INHERIT`,随后终行:
   ```text
   PATCH-Y2KW v2 DEPLOYED BY TECH-077
   ```
 - **哲学**:你成为了机器的新补丁。你的操作史接替了2000年那一份,等待下一位技师。主题闭环:**这台机器的修复方式,永远是换一个TECH-077。**
-- **实现位置**:pre-replay台词在`script_data.json`的`inherit_intro`;回放后的收尾与终行在`endings.inherit`。
+- **实现位置**:pre-replay台词在`script_data.json`的`inherit_intro`;回放后的收尾与终行在`endings.inherit`;A/B/C的身份码在`ending_meta`。
 ---
 ## 6. 伏笔对照表
 | 伏笔 | 埋点 | 回收 |
@@ -149,12 +149,12 @@
 - 唯一例外:`WE SAW THAT.`——它出现在系统文本的位置,但用的是第一人称复数。全游戏仅此一次。
 ---
 ## 8. 动态威胁层(叙事×机制绑定)
-> **v2.1 实现状态(部分)**:已实现KILL瞬间的`WE SAW THAT.`(全游戏一次)、KILL后8秒的假手册07(走弹窗队列,不入MANUAL白名单)、PUMP分支的扫描回声(`MANUAL SEAL: LOGGED` / `REMOTE WRITE: 1`)、远程写入条与结局coda。仍未实现:OLD动态延迟、NEW读未提交输入、输入同化、退格计数、扫描横带、KILL瞬间的0.5秒乱码。以下未标注的条目保留为设计目标。
+> **v2.1 实现状态(部分)**:已实现KILL瞬间的`WE SAW THAT.`(全游戏一次)、KILL后8秒的假手册07(走弹窗队列,不入MANUAL白名单)、PUMP分支的扫描回声(`MANUAL SEAL: LOGGED` / `REMOTE WRITE: 1`)、远程写入条与结局coda;灰色补全(右侧灰字、Tab补全/循环、Enter执行、按剧情解锁)与打字活动检测(打字取消KILL窗口并刷新idle计时)。仍未实现:OLD动态延迟、NEW读未提交输入、输入同化、退格计数、扫描横带、KILL瞬间的0.5秒乱码。以下未标注的条目保留为设计目标。
 每条威胁必须绑定一个叙事揭示点,不是纯特效。玩家被吓到的同时必须能回答"它为什么能这样做"。
 | 威胁 | 机制 | 叙事绑定 |
 |---|---|---|
 | NEW读未提交输入 | `text_changed`监听+节流 | 授权弹窗先行:`NEW请求访问你的输入缓冲区`——它先申请,再暴露已经在读 |
-| 灰色补全 | LineEdit右侧灰字,Tab执行 | LOGIN预填的升级。KILL后建议变SHUTDOWN——第一次是服务,第二次是陷阱 |
+| 灰色补全 | LineEdit右侧灰字,Tab补全/循环,Enter执行;A/B结局必须完整输入 | LOGIN预填的升级。KILL后建议变SHUTDOWN——第一次是服务,第二次是陷阱 |
 | OLD延迟动态化 | 状态函数 | 危险问题(/VOID相关)5秒;玩家走NEW方案或乱输3次8秒;C临近2秒——等待时长本身就是台词 |
 | 输入同化 | 小写实时转大写 | OLD在接管键盘。NEW:`你的字都变大了 :) OLD在帮你整理` |
 | 退格记录 | 计数阈值 | OLD: `你犹豫了。`——连退格都被记录 |

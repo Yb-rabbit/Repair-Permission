@@ -34,10 +34,23 @@ const END_FADE_TIME := 0.9
 const END_HINT_DELAY := 0.25
 const END_DIM_ALPHA := 0.75   # A/B keep the terminal faintly visible underneath
 const END_BLACK_ALPHA := 1.0  # C drops to full black
+const INPUT_MAX_LENGTH := 80
+const COMMAND_HISTORY_MAX := 50
+const ENDING_COMMANDS := ["FORMAT /VOID", "SHUTDOWN --VERIFY"]
+# Completion is a service, not a spoiler. Commands are revealed in the same order
+# the story reveals them: scan first, then CAT /VOID/TECH-077.
+const COMPLETION_HIDDEN_BEFORE_SCAN := [
+	"LS /VOID", "PS", "CAT /VOID/TECH-077",
+	"KILL 077", "FORMAT /VOID", "SHUTDOWN --VERIFY",
+]
+const COMPLETION_HIDDEN_BEFORE_CAT := [
+	"KILL 077", "FORMAT /VOID", "SHUTDOWN --VERIFY",
+]
 
 @onready var old_text: RichTextLabel = $VBox/Mid/OldPanel/OldText
 @onready var new_text: RichTextLabel = $VBox/Mid/NewPanel/NewText
 @onready var input_line: LineEdit = $VBox/Input
+@onready var completion_label: Label = $VBox/Input/Completion
 @onready var pump_bar: ProgressBar = $VBox/Bars/PumpBar
 @onready var scan_bar: ProgressBar = $VBox/Bars/ScanBar
 @onready var bar3: ProgressBar = $VBox/Bars/Bar3
@@ -45,6 +58,7 @@ const END_BLACK_ALPHA := 1.0  # C drops to full black
 @onready var epoch_label: Label = $VBox/Top/EpochLabel
 @onready var crt: ColorRect = $CRT
 @onready var end_status: Label = $EndStatus
+@onready var end_tag: Label = $EndTag
 @onready var final_line: Label = $FinalLine
 @onready var restart_hint: Label = $RestartHint
 @onready var popup_layer: CanvasLayer = $Popups
@@ -58,13 +72,21 @@ const END_BLACK_ALPHA := 1.0  # C drops to full black
 
 var data: Dictionary = {}
 var commands: Dictionary = {}          # "PUMP 3" -> {"old": Array, "new": String, "cb": Callable}
+var compact_commands: Dictionary = {}  # "PUMP3" -> "PUMP 3"; whitespace-insensitive matching
 var actions: Dictionary = {}           # "accept" -> Callable
 
-var history: Array[String] = []        # every player input, replayed at the ending
+var history: Array[String] = []        # every player input + OLD "* " records, replayed at the ending
+var command_history: Array[String] = []  # only real player input, for Up/Down recall
 var pending_old: Array[String] = []    # delayed output queue for OLD
 var junk_count := 0
 var temp := 0                          # hidden stat: +2 each time NEW decides for you
 var void_killed := false
+
+var history_cursor := -1               # -1 = not browsing history
+var history_draft := ""                # text restored after the newest history entry
+var completion_candidates: Array[String] = []
+var completion_index := 0
+var _programmatic_input := false       # text_changed is ours, not the player typing
 
 var scan_time := 0.0
 var scan_duration := 15.0
@@ -148,6 +170,10 @@ func _ready() -> void:
 	inherit_timer.one_shot = true
 	inherit_timer.timeout.connect(_on_inherit_timeout)
 	input_line.text_submitted.connect(_on_submit)
+	input_line.text_changed.connect(_on_input_text_changed)
+	input_line.gui_input.connect(_on_input_gui_input)
+	input_line.focus_exited.connect(_hide_completion)
+	input_line.resized.connect(_refresh_completion)
 	boot_timer.timeout.connect(_on_boot_tick)
 	_start_boot()
 
@@ -166,8 +192,13 @@ func _setup_fonts() -> void:
 	new_text.add_theme_font_size_override("normal_font_size", 17)
 	input_line.add_theme_font_override("font", UI_FONT)
 	input_line.add_theme_font_size_override("font_size", 16)
+	completion_label.add_theme_font_override("font", UI_FONT)
+	completion_label.add_theme_font_size_override("font_size", 14)
+	completion_label.add_theme_color_override("font_color", Color(0.435294, 0.843137, 1, 0.42))
 	final_line.add_theme_font_override("font", UI_FONT)
 	final_line.add_theme_font_size_override("font_size", 24)
+	end_tag.add_theme_font_override("font", UI_FONT)
+	end_tag.add_theme_font_size_override("font_size", 14)
 	restart_hint.add_theme_font_override("font", UI_FONT)
 	restart_hint.add_theme_font_size_override("font_size", 18)
 
@@ -181,9 +212,13 @@ func _setup_ui() -> void:
 	bar3.max_value = 4.0
 	bar3.value = 0
 	bar3.modulate.a = 0.0
-	input_line.placeholder_text = "Type a command, press Enter"
+	input_line.placeholder_text = "Type a command · Tab completes · Enter runs"
+	input_line.max_length = INPUT_MAX_LENGTH
 	input_line.visible = false
+	completion_label.visible = false
+	completion_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	final_line.visible = false
+	end_tag.visible = false
 	restart_hint.visible = false
 	crt.color = Color(0, 0, 0, 0)
 
@@ -192,6 +227,7 @@ func _prefill_login() -> void:
 	# NEW already filled in half the login: Enter auto-completes "LOGIN" to "LOGIN 077".
 	input_line.text = "LOGIN"
 	input_line.select_all()
+	_refresh_completion()
 
 
 # ---------------- Boot sequence: OLD terminal only, one line every BOOT_TICK ----------------
@@ -330,32 +366,35 @@ func _init_actions() -> void:
 
 
 func _build_commands() -> void:
+	commands.clear()
+	compact_commands.clear()
 	for key in data.commands:
 		var c: Dictionary = data.commands[key]
-		commands[str(key)] = {
+		var cmd := str(key)
+		commands[cmd] = {
 			"old": c.old,
 			"new": str(c.new),
 			"cb": actions.get(str(c.action), _act_none),
 		}
+		compact_commands[_compact(cmd)] = cmd
 
 
 # ---------------- Input: three-tier matching ----------------
 
 func _on_submit(raw: String) -> void:
-	var text := raw.strip_edges()
+	var cmd := _normalize_input(raw)
 	input_line.clear()
 	if not boot_done or in_ending:
 		return
-	if text == "":
+	if cmd == "":
 		return
-	last_input_msec = Time.get_ticks_msec()
-	# Any real input cancels the KILL 077 inheritance window.
-	inherit_timer.stop()
+	_mark_input_activity()
+	input_line.grab_focus()
 	_audio.on_player_input()
 	_audio.on_submit()
 
-	var cmd := text.to_upper()
 	history.append(cmd)
+	_remember_command(cmd)
 	_old_print("> " + cmd, true)
 
 	# During a scan, every keystroke only earns a DELETED line
@@ -363,37 +402,349 @@ func _on_submit(raw: String) -> void:
 		_old_print("[ DELETED ]", true)
 		return
 
-	var resolved := cmd
-	var completed := false
-	if not commands.has(cmd):
-		# SET DATE accepts free-form dates; exact SET DATE --AUTO is handled above.
-		if cmd.begins_with("SET DATE "):
-			last_cmd = cmd
-			_handle_set_date(cmd.substr(9).strip_edges())
-			return
-		resolved = ""
-		for key in commands:
-			if cmd.length() >= 2 and str(key).begins_with(cmd):
-				if resolved == "" or str(key).length() < resolved.length():
-					resolved = str(key)
-		if resolved == "":
-			_junk()
-			return
-		completed = true
-
-	# Lock all endings until the full scan has exposed /VOID.
-	if not scan_done and (resolved == "FORMAT /VOID" or resolved == "SHUTDOWN --VERIFY"):
-		_old_say(["UNKNOWN PARTITION."])
+	# SET DATE accepts free-form dates; exact SET DATE --AUTO is handled by the table.
+	if cmd.begins_with("SET DATE ") and not commands.has(cmd):
+		last_cmd = cmd
+		_handle_set_date(cmd.substr(9))
 		return
 
-	if completed:
+	var matched := _match_command(cmd)
+	var kind := str(matched.get("kind", "none"))
+	var resolved := str(matched.get("resolved", ""))
+	var candidates: Array[String] = []
+	for candidate in matched.get("candidates", []):
+		candidates.append(str(candidate))
+
+	if kind == "none":
+		_junk()
+		return
+	if kind == "ambiguous":
+		_new_say("I found more than one way to finish that. I can pick, but you should :)")
+		_old_say(["MORE THAN ONE MATCH.", "TYPE MORE OR PRESS TAB."])
+		completion_candidates = candidates
+		completion_index = 0
+		_restore_input(cmd)
+		_show_completion()
+		return
+
+	# Irreversible A/B endings must be named in full. "FO" is a prefix, not consent.
+	if not scan_done and resolved in ENDING_COMMANDS:
+		_old_say(["UNKNOWN PARTITION."])
+		return
+	if resolved in ENDING_COMMANDS and not _is_full_command(cmd, resolved):
+		_new_say("I can finish it, but this one should be yours :)")
+		_old_say(["TYPE IT IN FULL."])
+		_restore_input(cmd)
+		return
+
+	if kind == "prefix":
 		_new_say("I completed that to " + resolved + " for you. Running it :)")
 		_old_say(["PARTIAL MATCH", "MEANT " + _clip(resolved, 9)])
+		_run(resolved)
+		return
+
 	_run(resolved)
 
 
+func _on_input_text_changed(_new_text: String) -> void:
+	if _programmatic_input:
+		return
+	_mark_input_activity()
+	history_cursor = -1
+	history_draft = ""
+	completion_index = 0
+	_refresh_completion()
+
+
+func _mark_input_activity() -> void:
+	last_input_msec = Time.get_ticks_msec()
+	# Typing is real input. It also cancels the KILL 077 inheritance window.
+	if not inherit_timer.is_stopped():
+		inherit_timer.stop()
+
+
+func _normalize_input(raw: String) -> String:
+	var text := raw.strip_edges().to_upper()
+	var out := ""
+	for i in text.length():
+		var code := text.unicode_at(i)
+		if code >= 0xFF01 and code <= 0xFF5E:
+			out += String.chr(code - 0xFEE0)      # full-width ASCII -> half-width
+		elif code == 0x3000 or code == 0x00A0:
+			out += " "                            # full-width / non-breaking space
+		elif code == 9 or code == 10 or code == 13:
+			out += " "
+		else:
+			out += String.chr(code)
+	text = out
+	while text.contains("  "):
+		text = text.replace("  ", " ")
+	return text.strip_edges()
+
+
+func _compact(text: String) -> String:
+	# Whitespace is presentation, not syntax: SCAN/FULL, SCAN / FULL and PUMP3
+	# all collapse to the same comparison key.
+	return text.replace(" ", "")
+
+
+func _is_full_command(input: String, canonical: String) -> bool:
+	return input == canonical or _compact(input) == _compact(canonical)
+
+
+func _match_command(text: String) -> Dictionary:
+	if commands.has(text):
+		return {"kind": "exact", "resolved": text, "candidates": [text]}
+
+	var compact := _compact(text)
+	if compact.length() < 2:
+		return {"kind": "none", "resolved": "", "candidates": []}
+	if compact_commands.has(compact):
+		var canonical := str(compact_commands[compact])
+		return {"kind": "prefix", "resolved": canonical, "candidates": [canonical]}
+
+	var matches: Array[String] = []
+	for key in compact_commands:
+		if str(key).begins_with(compact):
+			matches.append(str(compact_commands[key]))
+	if matches.is_empty():
+		return {"kind": "none", "resolved": "", "candidates": []}
+	if matches.size() == 1:
+		return {"kind": "prefix", "resolved": matches[0], "candidates": [matches[0]]}
+
+	# Longest common prefix is the safe completion. If it is itself a command
+	# (PUMP -> PUMP 3), complete to it. If not (PUMP 3 --), it is true ambiguity.
+	var compact_matches: Array[String] = []
+	for candidate in matches:
+		compact_matches.append(_compact(candidate))
+	var prefix := _longest_common_prefix(compact_matches)
+	if compact_commands.has(prefix):
+		var common := str(compact_commands[prefix])
+		return {"kind": "prefix", "resolved": common, "candidates": [common]}
+
+	matches.sort_custom(_sort_commands)
+	return {"kind": "ambiguous", "resolved": "", "candidates": matches}
+
+
+func _longest_common_prefix(values: Array[String]) -> String:
+	if values.is_empty():
+		return ""
+	var prefix := values[0]
+	for i in range(1, values.size()):
+		while not values[i].begins_with(prefix):
+			prefix = prefix.substr(0, prefix.length() - 1)
+			if prefix == "":
+				return ""
+	return prefix
+
+
+func _sort_commands(a: String, b: String) -> bool:
+	if a.length() == b.length():
+		return a < b
+	return a.length() < b.length()
+
+
+func _remember_command(cmd: String) -> void:
+	command_history.append(cmd)
+	if command_history.size() > COMMAND_HISTORY_MAX:
+		command_history.pop_front()
+	history_cursor = -1
+	history_draft = ""
+
+
+func _restore_input(text: String) -> void:
+	_programmatic_input = true
+	input_line.text = text
+	input_line.caret_column = text.length()
+	_programmatic_input = false
+	_mark_input_activity()
+	_refresh_completion()
+
+
+func _set_input_text(text: String) -> void:
+	_programmatic_input = true
+	input_line.text = text
+	input_line.caret_column = text.length()
+	_programmatic_input = false
+	_mark_input_activity()
+	completion_index = 0
+	_refresh_completion()
+
+
+func _history_prev() -> void:
+	if command_history.is_empty():
+		return
+	if history_cursor == -1:
+		history_draft = input_line.text
+		history_cursor = command_history.size() - 1
+	elif history_cursor > 0:
+		history_cursor -= 1
+	_set_input_text(command_history[history_cursor])
+
+
+func _history_next() -> void:
+	if history_cursor == -1:
+		return
+	history_cursor += 1
+	if history_cursor >= command_history.size():
+		history_cursor = -1
+		_set_input_text(history_draft)
+	else:
+		_set_input_text(command_history[history_cursor])
+
+
+func _on_input_gui_input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key == null or not key.pressed or key.echo:
+		return
+	if key.keycode == KEY_TAB:
+		_cycle_completion(key.shift_pressed)
+		accept_event()
+		return
+	if key.keycode == KEY_UP:
+		_history_prev()
+		accept_event()
+		return
+	if key.keycode == KEY_DOWN:
+		_history_next()
+		accept_event()
+		return
+	if key.keycode == KEY_RIGHT and not key.shift_pressed and input_line.caret_column >= input_line.text.length():
+		if _accept_current_completion():
+			accept_event()
+
+
+func _refresh_completion() -> void:
+	if not is_node_ready() or completion_label == null:
+		return
+	if in_ending or not boot_done or not input_line.visible or not scan_timer.is_stopped():
+		_hide_completion()
+		return
+
+	var text := _normalize_input(input_line.text)
+	var candidates: Array[String] = []
+	if text == "":
+		if void_killed and read_cat:
+			candidates.append("SHUTDOWN --VERIFY")
+	elif not commands.has(text):
+		var matched := _match_command(text)
+		var kind := str(matched.get("kind", "none"))
+		if kind == "prefix" or kind == "ambiguous":
+			for candidate in matched.get("candidates", []):
+				var cmd := str(candidate)
+				if _completion_visible(cmd):
+					candidates.append(cmd)
+
+	if candidates.is_empty():
+		_hide_completion()
+		return
+	completion_candidates = candidates
+	completion_index = clampi(completion_index, 0, candidates.size() - 1)
+	_show_completion()
+
+
+func _completion_visible(cmd: String) -> bool:
+	# The grey text may only name what the story has already exposed.
+	if not scan_done:
+		return not (cmd in COMPLETION_HIDDEN_BEFORE_SCAN)
+	if not read_cat:
+		return not (cmd in COMPLETION_HIDDEN_BEFORE_CAT)
+	return true
+
+
+func _show_completion() -> void:
+	if completion_candidates.is_empty():
+		_hide_completion()
+		return
+	completion_index = clampi(completion_index, 0, completion_candidates.size() - 1)
+	var hint := "TAB  " + completion_candidates[completion_index]
+	if completion_candidates.size() > 1:
+		hint += "  (%d/%d)" % [completion_index + 1, completion_candidates.size()]
+	completion_label.text = hint
+	if not _completion_fits(hint):
+		_hide_completion()
+		return
+	completion_label.visible = true
+
+
+func _completion_fits(hint: String) -> bool:
+	var font := completion_label.get_theme_font("font")
+	var font_size := completion_label.get_theme_font_size("font_size")
+	if font == null:
+		return true
+	# Measure what the player typed with the LineEdit's own font: it is larger
+	# than the hint font, so using 14px for both would under-estimate overlap.
+	var typed_font := input_line.get_theme_font("font")
+	var typed_size := input_line.get_theme_font_size("font_size")
+	if typed_font == null:
+		typed_font = font
+		typed_size = font_size
+	var typed_width := typed_font.get_string_size(input_line.text, HORIZONTAL_ALIGNMENT_LEFT, -1, typed_size).x
+	var hint_width := font.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+	var available := input_line.size.x
+	# Headless / pre-layout frames can report only the LineEdit's minimum width.
+	# Fall back to the viewport row width so the hint still has a real budget.
+	var view_width := get_viewport_rect().size.x
+	if available < 320.0 and view_width >= 320.0:
+		available = maxf(available, view_width - 56.0)
+	if available <= 0.0:
+		available = 800.0
+	return typed_width + hint_width + 36.0 <= available
+
+
+func _hide_completion() -> void:
+	completion_candidates.clear()
+	completion_index = 0
+	if is_instance_valid(completion_label):
+		completion_label.visible = false
+		completion_label.text = ""
+
+
+func _cycle_completion(reverse := false) -> void:
+	if completion_candidates.is_empty():
+		return
+	var compact_text := _compact(_normalize_input(input_line.text))
+	var current := -1
+	for i in completion_candidates.size():
+		if _compact(completion_candidates[i]) == compact_text:
+			current = i
+			break
+	if current == -1:
+		current = completion_candidates.size() - 1 if reverse else 0
+	else:
+		current = wrapi(current + (-1 if reverse else 1), 0, completion_candidates.size())
+	_apply_completion(current)
+
+
+func _accept_current_completion() -> bool:
+	if completion_candidates.is_empty():
+		return false
+	var compact_text := _compact(_normalize_input(input_line.text))
+	for cmd in completion_candidates:
+		if _compact(cmd) == compact_text:
+			return false
+	_apply_completion(completion_index)
+	return true
+
+
+func _apply_completion(index: int) -> void:
+	if completion_candidates.is_empty():
+		return
+	completion_index = clampi(index, 0, completion_candidates.size() - 1)
+	var cmd := completion_candidates[completion_index]
+	_programmatic_input = true
+	input_line.text = cmd
+	input_line.caret_column = cmd.length()
+	_programmatic_input = false
+	_mark_input_activity()
+	history_cursor = -1
+	history_draft = ""
+	_show_completion()
+
+
 func _handle_set_date(value: String) -> void:
-	var parts := value.split("-")
+	var cleaned := value.replace(" ", "").replace("—", "-")
+	var parts := cleaned.split("-")
 	if parts.size() == 3:
 		var year_text := str(parts[0])
 		var month_text := str(parts[1])
@@ -434,6 +785,7 @@ func _run(cmd: String) -> void:
 		_audio.play_chime()
 	if cmd == "CAT /VOID/TECH-077":
 		read_cat = true
+		_refresh_completion()
 	_hint_for(cmd)
 
 
@@ -564,11 +916,14 @@ func _act_date_auto() -> void:
 func _act_kill() -> void:
 	void_killed = true
 	_audio.on_kill()
-	inherit_timer.start()
+	# KILL before the full scan arms nothing yet; _finish_scan() starts the window.
+	if scan_done:
+		inherit_timer.start()
 	if not saw_that:
 		saw_that = true
 		_old_say(["WE SAW THAT."])
 		_schedule_fake07()
+	_refresh_completion()
 
 
 func _schedule_fake07() -> void:
@@ -599,6 +954,7 @@ func _show_fake07() -> void:
 func _act_scan_full() -> void:
 	if scan_done or not scan_timer.is_stopped():
 		return
+	_hide_completion()
 	_audio.on_scan_start()
 	scan_time = 0.0
 	scan_stage = 0
@@ -701,6 +1057,10 @@ func _finish_scan() -> void:
 	_hint_scan()
 	_hint_for("SCAN /FULL")
 	_scan_confession()
+	# A KILL issued before the scan still counts: start the silent window now.
+	if void_killed and not in_ending:
+		inherit_timer.start()
+	_refresh_completion()
 
 
 func _scan_confession() -> void:
@@ -724,11 +1084,13 @@ func _begin_ending(key: String) -> void:
 	_clear_popups()
 	old_timer.stop()
 	pending_old.clear()
+	_hide_completion()
 	input_line.editable = false
 	input_line.release_focus()
 	input_line.placeholder_text = "Ending in progress · press R to restart"
 	restart_hint.visible = false
 	end_status.visible = false
+	end_tag.visible = false
 	if key == "inherit":
 		clock_timer.stop()
 		_inherit_intro()
@@ -834,6 +1196,8 @@ func _on_end_tick() -> void:
 	elif line.begins_with("BLACK> "):
 		# A leaves the machine barely visible; C buries the whole terminal.
 		_show_black_screen(END_DIM_ALPHA if ending_key == "format" else END_BLACK_ALPHA)
+	elif line.begins_with("CLOCK> "):
+		_apply_clock_directive(line.substr(7).strip_edges())
 	elif line.begins_with("FINAL> "):
 		_show_final_line(line.substr(7))
 	else:
@@ -851,6 +1215,20 @@ func _show_black_screen(alpha: float = END_BLACK_ALPHA, fade_audio: bool = true)
 		_audio.on_black_screen()
 
 
+func _apply_clock_directive(value: String) -> void:
+	match value:
+		"RESET":
+			clock_unix = CLOCK_START_UNIX
+			epoch_value = EPOCH_START
+			clock_loops = 0
+			epoch_label.visible = false
+			_refresh_status_labels()
+		"DARK":
+			clock_timer.stop()
+			clock_label.text = "--:--:--"
+			epoch_label.visible = false
+
+
 func _show_end_card() -> void:
 	if not is_inside_tree():
 		return
@@ -859,7 +1237,17 @@ func _show_end_card() -> void:
 	input_line.call_deferred("hide")
 	end_status.text = END_STATUS_TEXT
 	end_status.visible = true
+	_show_end_tag()
 	restart_hint.visible = true
+
+
+func _show_end_tag() -> void:
+	var meta: Dictionary = data.get("ending_meta", {}).get(ending_key, {})
+	if meta.is_empty():
+		end_tag.visible = false
+		return
+	end_tag.text = "%s · %s" % [str(meta.get("code", "")), str(meta.get("name", ""))]
+	end_tag.visible = true
 
 
 func _show_final_line(text: String) -> void:
