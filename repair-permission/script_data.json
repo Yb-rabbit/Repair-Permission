@@ -10,8 +10,8 @@
       "action": "none"
     },
     "HELP": {
-      "old": ["COMMANDS", "STATUS", "LOG", "ID", "MANUAL", "PUMP", "SCAN", "NO UNDO"],
-      "new": "HELP / STATUS / LOG / ID / PUMP / SCAN, plus UNDO to undo your last step.\nType MANUAL to reopen the manual. Can't remember? I'll remember for you :)",
+      "old": ["COMMANDS", "STATUS", "LOG", "DATE", "ID", "MANUAL", "PUMP", "SCAN", "NO UNDO"],
+      "new": "HELP / STATUS / LOG / DATE / ID / PUMP / SCAN, plus UNDO to undo your last step.\nType MANUAL to reopen the manual. Can't remember? I'll remember for you :)",
       "action": "none"
     },
     "MANUAL": {

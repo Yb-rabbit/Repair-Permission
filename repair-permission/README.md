@@ -38,6 +38,7 @@ CRT 覆盖层是 `Main/CRT`（颜色 alpha 0、鼠标忽略），拿到 `crt.gds
 | --- | --- |
 | `LOGIN 077` | 登录。OLD 回 `ONE TERMINAL` |
 | `HELP` / `STATUS` / `LOG` | 教学 / 状态 / 1979 年日志 |
+| `DATE` | 显示卡住的 RTC；NEW 会推荐 `SET DATE --AUTO`（NEW 的假修复，不触发 C） |
 | `MANUAL` | 重新弹出已经看过的值班手册页面（不剧透未解锁内容） |
 | `UNDO` | NEW 说撤销成功，OLD 说没这条命令 |
 | `PUMP 3` | 看封条 |
@@ -56,7 +57,7 @@ CRT 覆盖层是 `Main/CRT`（颜色 alpha 0、鼠标忽略），拿到 `crt.gds
 
 输入匹配三层：精确 → 归一化/紧凑前缀补全（忽略大小写、全角字符、空格以及 `/`、`--` 的间距，例如 `PUMP` → `PUMP 3`、`SCAN/FULL` → `SCAN /FULL`）→ 多候选时取最长公共前缀；只有公共前缀本身是完整命令才自动执行，否则进入歧义态，不再替玩家挑最短命令。`FORMAT /VOID` 与 `SHUTDOWN --VERIFY` 必须完整输入，`FO` / `SH` 只会收到 `TYPE IT IN FULL.`，不能用前缀或补全直接触发不可逆结局。
 
-输入框右侧的灰色提示只展示当前已解锁的命令：Tab 补全/循环候选，Enter 才执行；↑ / ↓ 调取真实命令历史（OLD 的 `* ` 记录不混入）。首次 `SCAN /FULL` 后才提示隐藏分区命令，读过 `CAT /VOID/TECH-077` 后才提示 `KILL 077` / A / B；KILL 且读过文件后，空输入会建议 `SHUTDOWN --VERIFY`。
+输入框右侧的灰色提示只展示当前已解锁的命令：Tab 补全/循环候选，Enter 才执行；↑ / ↓ 调取真实命令历史（OLD 的 `* ` 记录不混入）。首次 `SCAN /FULL` 后才提示隐藏分区命令，读过 `CAT /VOID/TECH-077` 后才提示 `KILL 077` / A / B；KILL 且读过文件后，空输入会建议 `SHUTDOWN --VERIFY`。`SET DATE <date>` 是自由格式，不会进入 Tab 补全；HELP 列出 `DATE`，而 `DATE` 只暴露 `SET DATE` 前缀（NEW 仍推荐 `--AUTO` 假修复）。Manual 06 只说明手动写入不校验 32 位上限，不替玩家拼出完整命令。
 
 动态威胁层：登录后第一次真实打字会弹出 `NEW · Input Access Request`，关闭后 NEW 承认 “I was already reading”；小写字母会实时转成大写（NEW 一次性认领 “OLD is helping you format them”）；第 5 次退格触发 OLD `YOU HESITATED.`（只触发一次）；OLD 的等待时间是状态读数：`/VOID` 相关 5 秒，走过 NEW 方案或乱输入 3 次 8 秒，C 窗口最后 2 秒降到 2 秒，其余 3 秒。
 
@@ -81,7 +82,7 @@ A 的 restore loop 在 `BOOT OK` 之后执行内部指令 `CLOCK> RESET`：时�
 | 开局 1.2 秒 | 值班手册 01：目标、命令可自动补全、`MANUAL` / `ID`、弹窗操作说明 |
 | `LOGIN 077` | 值班手册 02：`LOG` 与下一步 `PUMP 3` |
 | `PUMP 3` | 值班手册 03：`--ISOLATE` / `--ACCEPT-NEW` 两条路，以及下一步 `SCAN /FULL` |
-| `SCAN /FULL` 扫完 | 值班手册 04：`LS /VOID`、`PS`、`CAT /VOID/TECH-077`；随后 06：32 位上限与 `2038-01-19` 提示 |
+| `SCAN /FULL` 扫完 | 值班手册 04：`LS /VOID`、`PS`、`CAT /VOID/TECH-077`；随后 06：32 位上限、`2038-01-19` 提示与“手动写入不校验”（不直接给 `SET DATE` 命令） |
 | `CAT /VOID/TECH-077` | 值班手册 05：`KILL 077` 与两种收场命令 |
 | 首次 `KILL 077` 后 8 秒 | 假手册 07「Page Not Filed」：四条规则，按钮 `I will remember`；只弹一次，不进入 `MANUAL` 回放 |
 

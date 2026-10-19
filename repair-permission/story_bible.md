@@ -114,6 +114,7 @@
 - **终场**:NEW: `晚安 :) 明天见。` OLD不回复。断电舞台指示后`CLOCK> DARK`让时钟停在`--:--:--`、EPOCH隐藏;结局播完后0.9秒淡出至半透明黑,0.25秒后显示UI状态`SHIFT ENDED`与身份码`077-B · STILL HERE`,保留"机器还亮着"的隐约轮廓。
 ### 结局C · INHERIT(继承)
 - **入口**:`SET DATE 2038-01-19`(或2038-1-19,或两位数38-01-19——窗口法回收);或KILL 077后60秒完全静默——**你删掉了它,但沉默本身触发了继承**。
+- **发现路径**:扫描完成后,手册06只说明RTC会接受无法表示的日期、手动写入不校验32位上限;HELP列出`DATE`,`DATE`只暴露`SET DATE`前缀(NEW仍推荐`--AUTO`假修复)。玩家需自己把写入与溢出组合成C入口,不直接给完整命令。
 - **序列**:时钟翻为1901-12-13 20:45:52(真实回绕值)→双终端乱码1秒→OLD系统行`CLOCK WRITE 2038-01-19 03:14:07` / `SIGNED 32-BIT OVERFLOW` / `EPOCH -2147483648`→OLD: `FINALLY. ALL PRESENT.`→NEW: `...This is not one of my allowed branches.`→回放全部输入,每条加`[PATCH]`前缀→OLD: `YOUR ACTIONS ARE WRITTEN.` / `THE NEXT TECHNICIAN WILL READ THEM.`→0.9秒淡出至全黑,0.25秒后显示UI状态`SHIFT ENDED`与身份码`077-C · INHERIT`,随后终行:
   ```text
   PATCH-Y2KW v2 DEPLOYED BY TECH-077

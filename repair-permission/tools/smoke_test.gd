@@ -131,6 +131,7 @@ func _initialize() -> void:
 	await _tick()
 	_check("exact_match", main.last_cmd == "HELP", main.last_cmd)
 	_check("help_lists_manual", main.old_text.get_parsed_text().contains("MANUAL"), "")
+	_check("help_lists_date", main.commands["HELP"].old.has("DATE"), str(main.commands["HELP"].old))
 	_check("old_ellipsis", main.old_text.get_parsed_text().contains("..."), "")
 	_check("new_help_mentions_log", main.new_text.get_parsed_text().contains("LOG"), "")
 
@@ -192,6 +193,8 @@ func _initialize() -> void:
 	_check("scan_stream_found", main.old_text.get_parsed_text().contains("/HOME/TECH-077 FOUND"), "")
 	_check("scan_rewind", main.scan_found and main.scan_rewound, str(main.scan_found) + "/" + str(main.scan_rewound))
 	_check("scan_echo_accept", main.old_text.get_parsed_text().contains("REMOTE WRITE: 1"), "")
+	var y2k_body := str(main._hints_seen.get("scan_y2k", {}).get("body", ""))
+	_check("hint06_keeps_manual_write_implicit", y2k_body.contains("manual writes") and not y2k_body.contains("SET DATE"), "")
 
 	main._on_submit("FORMAT /VOID")
 	await create_timer(0.05).timeout
