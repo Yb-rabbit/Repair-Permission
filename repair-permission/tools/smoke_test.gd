@@ -10,6 +10,9 @@ var failed := 0
 
 
 func _initialize() -> void:
+	# All waits scale together; 4x keeps the timer-heavy suite inside the
+	# command runner's capture window without changing any assertion.
+	Engine.time_scale = 4.0
 	f = FileAccess.open("res://smoke_result.txt", FileAccess.WRITE)
 	main = load("res://Main.tscn").instantiate()
 	root.add_child(main)
@@ -30,11 +33,14 @@ func _initialize() -> void:
 
 	main.old_timer.stop()
 	main.pending_old.clear()
+	main.old_delay_override = 0.05
 	main.old_timer.wait_time = 0.05
 	main.replay_timer.wait_time = 0.01
 	main.end_timer.wait_time = 0.01
 	main.scan_timer.wait_time = 0.05
 	main.scan_duration = 0.4
+	# Guidance has its own focused tests below; keep it from firing mid-suite.
+	main.guide_idle_seconds = 9999.0
 
 	_check("commands_loaded", main.commands.size() == 20, str(main.commands.size()))
 	_check("initial_prefill", main.input_line.text == "LOGIN", main.input_line.text)
@@ -77,6 +83,43 @@ func _initialize() -> void:
 	_check("manual_match", main.last_cmd == "MANUAL", main.last_cmd)
 	_check("manual_requeued", main._popup_queue.size() == 2, str(main._popup_queue.size()))
 	main._clear_popups()
+
+	# Enter must leave the prompt focused and editable, like a real terminal.
+	main.input_line.grab_focus()
+	main._on_submit("HELP")
+	await _tick()
+	_check("submit_keeps_editing", main.input_line.keep_editing_on_text_submit, "")
+	_check("submit_keeps_focus", main.input_line.has_focus() and main.input_line.editable, str(main.input_line.has_focus()))
+
+	# Guidance is a separate highest-priority lane, not a MANUAL page.
+	var manual_order_before: Array = main._hint_order.duplicate()
+	main.guide_idle_seconds = 5.0
+	main.last_activity_msec = Time.get_ticks_msec()
+	main._check_idle_guidance()
+	_check("guide_waits_for_idle", not is_instance_valid(main._guide_popup), "")
+	main.last_activity_msec = Time.get_ticks_msec() - 6000
+	main._check_idle_guidance()
+	var guide: PanelContainer = main._guide_popup
+	_check("guide_opens_after_idle", is_instance_valid(guide), "")
+	_check("guide_kind", guide != null and guide.popup_kind() == "guide", guide.popup_kind() if guide != null else "none")
+	_check("guide_context_pump", guide != null and guide.title_text().contains("GUIDE") and guide.title_text().contains("Pump"), guide.title_text() if guide != null else "none")
+	_check("guide_not_manual", main._hint_order.size() == manual_order_before.size(), str(main._hint_order))
+	main._check_idle_guidance()
+	_check("guide_no_duplicate", main._guide_popup == guide, "")
+	main._hint("guide_coexist_manual", "Manual Test", "Manual body")
+	_check("guide_coexists_with_manual", is_instance_valid(main._popup) and is_instance_valid(main._guide_popup), "")
+	_check("guide_draws_above_manual", main._guide_popup.z_index > main._popup.z_index, "%d>%d" % [main._guide_popup.z_index, main._popup.z_index])
+	main._clear_popups()
+	_check("guide_cleared_with_popups", not is_instance_valid(main._guide_popup) and main._popup == null, "")
+
+	# Mouse movement is real activity and postpones the idle guide.
+	main.guide_idle_seconds = 5.0
+	main.last_activity_msec = 0
+	var motion := InputEventMouseMotion.new()
+	motion.relative = Vector2(1, 0)
+	main._input(motion)
+	_check("mouse_postpones_guide", main.last_activity_msec > 0, str(main.last_activity_msec))
+	main.guide_idle_seconds = 9999.0
 
 	main._on_submit("HELP")
 	await _tick()
@@ -435,7 +478,7 @@ func _initialize() -> void:
 	main.input_line.text = "L"
 	main._on_input_text_changed("L")      # property assignment does not emit text_changed in GDScript
 	_check("typing_cancels_inherit", main.inherit_timer.is_stopped(), "")
-	await create_timer(0.02).timeout
+	await create_timer(0.1).timeout
 	main.input_line.text = "LS"
 	main._on_input_text_changed("LS")
 	_check("typing_updates_idle_clock", main.last_input_msec > activity_before, str(main.last_input_msec) + ">" + str(activity_before))
@@ -454,6 +497,82 @@ func _initialize() -> void:
 	await create_timer(0.5).timeout
 	_check("command_history_real_only", main.command_history.has("SCAN /FULL") and not main.command_history.has("* PUMP UNSERVICED. LOGGED."), str(main.command_history))
 
+	# §8 dynamic threats: OLD's wait is a state readout.
+	main = await _fresh_main()
+	main.old_delay_override = -1.0
+	_check("old_delay_base", is_equal_approx(main._old_delay_seconds(), 3.0), str(main._old_delay_seconds()))
+	main.last_cmd = "LS /VOID"
+	_check("old_delay_void", is_equal_approx(main._old_delay_seconds(), 5.0), str(main._old_delay_seconds()))
+	main.last_cmd = ""
+	main.temp = 2
+	_check("old_delay_new_path", is_equal_approx(main._old_delay_seconds(), 8.0), str(main._old_delay_seconds()))
+	main.temp = 0
+	main.junk_count = 3
+	_check("old_delay_junk", is_equal_approx(main._old_delay_seconds(), 8.0), str(main._old_delay_seconds()))
+	main.junk_count = 0
+	main.inherit_timer.start(1.0)
+	_check("old_delay_ending_window", is_equal_approx(main._old_delay_seconds(), 2.0), str(main._old_delay_seconds()))
+	main.inherit_timer.stop()
+	main._old_say(["DELAY PROBE"])
+	_check("old_delay_applied", is_equal_approx(main.old_timer.wait_time, 3.0), str(main.old_timer.wait_time))
+	main.old_timer.stop()
+	main.pending_old.clear()
+
+	# Backspace is recorded, but OLD only admits it once.
+	main = await _fresh_main()
+	main.input_line.text = "ABC"
+	for i in 5:
+		main._on_input_gui_input(_key(KEY_BACKSPACE))
+	await create_timer(0.08).timeout
+	_check("backspace_count", main.backspace_count == 5, str(main.backspace_count))
+	_check("hesitation_line", main.old_text.get_parsed_text().contains("YOU HESITATED."), "")
+	for i in 5:
+		main._on_input_gui_input(_key(KEY_BACKSPACE))
+	await create_timer(0.08).timeout
+	_check("hesitation_once", main.old_text.get_parsed_text().count("YOU HESITATED.") == 1, str(main.old_text.get_parsed_text().count("YOU HESITATED.")))
+
+	# Lowercase is assimilated as it is typed, and NEW takes credit for it.
+	main = await _fresh_main()
+	main.input_line.text = "help"
+	main.input_line.caret_column = 2
+	main._on_input_text_changed("help")
+	_check("input_assimilated", main.input_line.text == "HELP", main.input_line.text)
+	_check("input_assimilation_caret", main.input_line.caret_column == 2, str(main.input_line.caret_column))
+	_check("input_assimilation_reveal", main.new_text.get_parsed_text().contains("letters just got bigger"), "")
+
+	# NEW asks for input access, then admits it was already reading.
+	main = await _fresh_main()
+	main._on_submit("LOGIN 077")
+	await _tick()
+	main._clear_popups()
+	main.input_line.text = "HE"
+	main._on_input_text_changed("HE")
+	_check("auth_popup", is_instance_valid(main._popup) and main._popup.title_text().contains("Input Access"), main._popup.title_text() if is_instance_valid(main._popup) else "none")
+	_check("auth_not_manual", not main._hints_seen.has("auth"), str(main._hint_order))
+	var auth_popup: PanelContainer = main._popup
+	auth_popup._on_confirm()
+	await create_timer(0.45).timeout
+	_check("auth_reveal", main.new_text.get_parsed_text().contains("already reading"), "")
+
+	# The 2px scan band runs with the scan stream and retires with the timer.
+	main = await _fresh_main()
+	main._on_submit("SCAN /FULL")
+	await _tick()
+	_check("scan_band_visible", main.scan_band.visible and is_equal_approx(main.scan_band.size.y, 2.0), str(main.scan_band.size))
+	_check("scan_band_tween", main.scan_band_tween != null and main.scan_band_tween.is_valid(), "")
+	await create_timer(0.55).timeout
+	_check("scan_band_stopped", main.scan_done and not main.scan_band.visible, str(main.scan_done))
+
+	# KILL glitches once for half a second, then never again.
+	main = await _fresh_main()
+	main._on_submit("KILL 077")
+	await _tick()
+	_check("kill_glitch_visible", main.kill_glitch_played and main.glitch_text.visible and main.glitch_text.text.length() > 0, "")
+	await create_timer(0.5).timeout
+	_check("kill_glitch_stopped", not main.glitch_text.visible, "")
+	main._on_submit("KILL 077")
+	_check("kill_glitch_once", main.kill_glitch_played and not main.glitch_text.visible, "")
+
 	_finish()
 
 
@@ -463,6 +582,7 @@ func _fresh_main() -> Node:
 	var next_main: Node = load("res://Main.tscn").instantiate()
 	root.add_child(next_main)
 	await create_timer(0.25).timeout
+	next_main.old_delay_override = 0.05
 	next_main._finish_boot(true)          # smoke test skips the 15-line boot sequence
 	next_main.old_timer.stop()
 	next_main.pending_old.clear()
@@ -471,6 +591,7 @@ func _fresh_main() -> Node:
 	next_main.end_timer.wait_time = 0.01
 	next_main.scan_timer.wait_time = 0.05
 	next_main.scan_duration = 0.4
+	next_main.guide_idle_seconds = 9999.0
 	# Suppress the delayed boot popup in the short C-only scenes.
 	next_main._hints_seen["boot"] = {"title": "", "body": ""}
 	next_main._clear_popups()
@@ -503,6 +624,7 @@ func _check(name: String, cond: bool, extra: String) -> void:
 
 
 func _finish() -> void:
+	Engine.time_scale = 1.0
 	f.store_line("SMOKE_DONE passed=%d failed=%d" % [passed, failed])
 	f.flush()
 	f.close()

@@ -10,6 +10,9 @@ signal closed
 
 const WIDTH := 380.0
 const EDGE := 8.0
+const MANUAL_Z := 100
+const GUIDE_Z := 200
+const GUIDE_Y := 88.0
 const UI_FONT := preload("res://ui_font.tres")
 const CONNECTED_SFX := preload("res://connected.wav")
 const DISCONNECTED_SFX := preload("res://disconnected.wav")
@@ -19,6 +22,8 @@ var _title_label: Label
 var _body: RichTextLabel
 var _ok_button: Button
 var _connected_sfx: AudioStreamPlayer
+var _panel_style: StyleBoxFlat
+var _kind := "manual"
 var _built := false
 var _dragging := false
 var _drag_offset := Vector2.ZERO
@@ -35,7 +40,7 @@ func _build() -> void:
 	_built = true
 	custom_minimum_size = Vector2(WIDTH, 0)
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	z_index = 100
+	z_index = MANUAL_Z
 
 	var th := Theme.new()
 	th.default_font = UI_FONT
@@ -48,6 +53,7 @@ func _build() -> void:
 	sb.set_border_width_all(1)
 	sb.set_corner_radius_all(3)
 	sb.set_content_margin_all(10)
+	_panel_style = sb
 	add_theme_stylebox_override("panel", sb)
 
 	var root := VBoxContainer.new()
@@ -107,10 +113,11 @@ func _build() -> void:
 	add_child(_connected_sfx)
 
 
-func open(title: String, body: String, ok_text := "Got it") -> void:
+func open(title: String, body: String, ok_text := "Got it", kind := "manual") -> void:
 	if not _built:
 		_build()
 	_closing = false
+	_apply_kind(kind)
 	_title_label.text = title
 	_body.text = body
 	_ok_button.text = ok_text
@@ -119,13 +126,42 @@ func open(title: String, body: String, ok_text := "Got it") -> void:
 
 	reset_size()
 	var vp := get_viewport_rect().size
-	var slot := get_tree().get_nodes_in_group("hint_popup").size() - 1
-	position = Vector2(vp.x - size.x - 32.0, 104.0 + maxf(0.0, float(slot)) * 26.0)
+	if _kind == "guide":
+		# Guidance owns a separate lane: it may sit beside Manual and always
+		# draws above it, without entering the Manual queue.
+		position = Vector2((vp.x - size.x) * 0.5, GUIDE_Y)
+	else:
+		var slot := get_tree().get_nodes_in_group("manual_popup").size() - 1
+		position = Vector2(vp.x - size.x - 32.0, 104.0 + maxf(0.0, float(slot)) * 26.0)
 	_clamp_into_view()
 
 	modulate.a = 0.0
 	var tw := create_tween()
 	tw.tween_property(self, "modulate:a", 1.0, 0.16)
+
+
+func _apply_kind(kind: String) -> void:
+	_kind = "guide" if kind == "guide" else "manual"
+	remove_from_group("guide_popup")
+	remove_from_group("manual_popup")
+	if _kind == "guide":
+		add_to_group("guide_popup")
+		z_index = GUIDE_Z
+		if _panel_style != null:
+			_panel_style.border_color = Color(0.867, 0.733, 0.400, 1)
+		if _title_label != null:
+			_title_label.add_theme_color_override("font_color", Color(1, 0.871, 0.639, 1))
+	else:
+		add_to_group("manual_popup")
+		z_index = MANUAL_Z
+		if _panel_style != null:
+			_panel_style.border_color = Color(0.271, 0.663, 0.784, 1)
+		if _title_label != null:
+			_title_label.add_theme_color_override("font_color", Color(0.768, 0.957, 1, 1))
+
+
+func popup_kind() -> String:
+	return _kind
 
 
 func title_text() -> String:

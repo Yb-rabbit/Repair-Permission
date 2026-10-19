@@ -115,6 +115,14 @@
       "ok": "I will remember"
     }
   },
+  "auth": {
+    "title": "NEW · Input Access Request",
+    "body": "[color=#8fe3ff]NEW requests access to your input buffer.[/color]\n\nPurpose: command completion, safety checks, and making your shift easier :)\n\n[ ALLOW ]",
+    "ok": "Allow",
+    "reveal": "Thanks. I was already reading, but now it's official :)"
+  },
+  "assimilate": "Your letters just got bigger :) OLD is helping you format them.",
+  "backspace": ["YOU HESITATED."],
   "scan_complete": {
     "old": ["YOU RUN ON IT."],
     "new": "...Fine. My first system directive wasn't \"serve the user\".\nIt was \"keep technicians away from /VOID\". Not because it's dangerous --\nbecause fixing it costs money. The 2000 fix cost 500 billion.\nThe conclusion: keep using two digits next time :)"
@@ -150,6 +158,33 @@
   "idle": {
     "old": ["MIDNIGHT PENDING."],
     "new": "It was like that before I was installed :) Stuck three seconds before midnight, waiting for someone to press confirm."
+  },
+  "guidance": {
+    "login": {
+      "title": "GUIDE · Log In",
+      "body": "[color=#8fe3ff]LOGIN 077[/color] is already in the input. Press [color=#8fe3ff]Enter[/color] to accept it, or type [color=#8fe3ff]HELP[/color] first.",
+      "ok": "Got it"
+    },
+    "pump": {
+      "title": "GUIDE · Pump 3",
+      "body": "Type [color=#8fe3ff]PUMP 3[/color], then choose [color=#8fe3ff]--ISOLATE[/color] (OLD) or [color=#8fe3ff]--ACCEPT-NEW[/color] (NEW). Both move the shift forward; their records differ.",
+      "ok": "Got it"
+    },
+    "scan": {
+      "title": "GUIDE · Full Scan",
+      "body": "The pump is settled. Run [color=#8fe3ff]SCAN /FULL[/color] and let it finish. It takes a few seconds, and NEW may cut in while it runs.",
+      "ok": "Got it"
+    },
+    "void": {
+      "title": "GUIDE · Hidden Partition",
+      "body": "Try [color=#8fe3ff]LS /VOID[/color], [color=#8fe3ff]PS[/color], or [color=#8fe3ff]CAT /VOID/TECH-077[/color] to inspect the hidden partition.",
+      "ok": "Got it"
+    },
+    "free": {
+      "title": "GUIDE · Command Help",
+      "body": "Type [color=#8fe3ff]HELP[/color] for the command list, [color=#8fe3ff]MANUAL[/color] for pages you have seen, or [color=#8fe3ff]ID[/color] for your operator record.",
+      "ok": "Got it"
+    }
   },
   "ambient": {
     "old": ["NOT A COMMAND", "ROOM 2 PERSONS"],

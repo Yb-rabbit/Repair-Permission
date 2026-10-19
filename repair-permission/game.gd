@@ -16,6 +16,7 @@ const CLOCK_REWIND := 10
 const EPOCH_START := 2147482647
 const SCAN_CONFESSION_NEW_DELAY := 4.0
 const IDLE_INPUT_MS := 30000
+const GUIDE_IDLE_SEC := 20.0
 const INHERIT_WINDOW_SEC := 60.0
 const INHERIT_CLOCK_TEXT := "1901-12-13 20:45:52"
 const INHERIT_EPOCH_TEXT := "EPOCH: -2147483648"
@@ -37,6 +38,18 @@ const END_BLACK_ALPHA := 1.0  # C drops to full black
 const INPUT_MAX_LENGTH := 80
 const COMMAND_HISTORY_MAX := 50
 const ENDING_COMMANDS := ["FORMAT /VOID", "SHUTDOWN --VERIFY"]
+# §8 dynamic threats: OLD's delay is a state readout, not a fixed timer.
+const OLD_DELAY_BASE := 3.0
+const OLD_DELAY_DANGER := 5.0
+const OLD_DELAY_NEW_PATH := 8.0
+const OLD_DELAY_ENDING_WINDOW := 2.0
+const OLD_ENDING_WINDOW := 2.0
+const BACKSPACE_REVEAL := 5
+const SCAN_BAND_HEIGHT := 2.0
+const SCAN_BAND_TIME := 1.25
+const KILL_GLITCH_TIME := 0.5
+const KILL_GLITCH_CHARS := 900
+const KILL_GLITCH_LINE := 72
 # Completion is a service, not a spoiler. Commands are revealed in the same order
 # the story reveals them: scan first, then CAT /VOID/TECH-077.
 const COMPLETION_HIDDEN_BEFORE_SCAN := [
@@ -57,6 +70,8 @@ const COMPLETION_HIDDEN_BEFORE_CAT := [
 @onready var clock_label: Label = $VBox/Top/ClockLabel
 @onready var epoch_label: Label = $VBox/Top/EpochLabel
 @onready var crt: ColorRect = $CRT
+@onready var scan_band: ColorRect = $ScanBand
+@onready var glitch_text: RichTextLabel = $Glitch
 @onready var end_status: Label = $EndStatus
 @onready var end_tag: Label = $EndTag
 @onready var final_line: Label = $FinalLine
@@ -80,6 +95,7 @@ var command_history: Array[String] = []  # only real player input, for Up/Down r
 var pending_old: Array[String] = []    # delayed output queue for OLD
 var junk_count := 0
 var temp := 0                          # hidden stat: +2 each time NEW decides for you
+var logged_in := false                 # LOGIN resolved, including the prefilled "LOGIN" prefix
 var void_killed := false
 
 var history_cursor := -1               # -1 = not browsing history
@@ -103,6 +119,12 @@ var read_cat := false              # player opened /VOID/TECH-077
 var saw_that := false              # KILL 077 one-shot line already delivered
 var _fake07_seen := false          # fake manual 07 already queued/shown
 var fake07_delay := 8.0            # seconds after the first KILL; tests shorten this
+var old_delay_override := -1.0      # smoke tests pin this; production uses the state readout
+var backspace_count := 0
+var hesitation_shown := false
+var input_assimilated := false
+var auth_requested := false
+var kill_glitch_played := false
 
 var replay_index := 0
 var ending_lines: Array = []
@@ -115,10 +137,13 @@ var clock_unix := CLOCK_START_UNIX
 var epoch_value := EPOCH_START
 var clock_loops := 0
 var last_input_msec := 0
+var last_activity_msec := 0
+var guide_idle_seconds := GUIDE_IDLE_SEC
 var idle_egg_shown := false
 
 var new_tween: Tween
 var black_tween: Tween
+var scan_band_tween: Tween
 var _audio
 
 var boot_done := false                 # false -> input hidden, commands ignored
@@ -143,14 +168,17 @@ var boot_lines: Array[String] = [
 	"BY YibiRabbit007",
 ]
 
-var _popup: PanelContainer = null      # currently visible hint popup
+var _popup: PanelContainer = null      # currently visible manual popup
+var _guide_popup: PanelContainer = null  # highest-priority guidance popup, independent lane
 var _popup_queue: Array[Dictionary] = []
+var _popup_after := ""                 # optional narration to run when the current popup closes
 var _hints_seen: Dictionary = {}       # id -> {title, body}; each hint is shown only once
 var _hint_order: Array[String] = []    # first-seen order, replayed by MANUAL
 
 
 func _ready() -> void:
 	last_input_msec = Time.get_ticks_msec()
+	last_activity_msec = last_input_msec
 	var file := FileAccess.open(DATA_PATH, FileAccess.READ)
 	if file == null:
 		push_error("Missing " + DATA_PATH)
@@ -201,6 +229,8 @@ func _setup_fonts() -> void:
 	end_tag.add_theme_font_size_override("font_size", 14)
 	restart_hint.add_theme_font_override("font", UI_FONT)
 	restart_hint.add_theme_font_size_override("font_size", 18)
+	glitch_text.add_theme_font_override("normal_font", UI_FONT)
+	glitch_text.add_theme_font_size_override("normal_font_size", 14)
 
 
 func _setup_ui() -> void:
@@ -214,6 +244,9 @@ func _setup_ui() -> void:
 	bar3.modulate.a = 0.0
 	input_line.placeholder_text = "Type a command · Tab completes · Enter runs"
 	input_line.max_length = INPUT_MAX_LENGTH
+	# A terminal prompt stays ready after Enter. Without this, LineEdit releases
+	# editing on text_submitted and the next command starts from a blurred input.
+	input_line.keep_editing_on_text_submit = true
 	input_line.visible = false
 	completion_label.visible = false
 	completion_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -221,6 +254,8 @@ func _setup_ui() -> void:
 	end_tag.visible = false
 	restart_hint.visible = false
 	crt.color = Color(0, 0, 0, 0)
+	scan_band.visible = false
+	glitch_text.visible = false
 
 
 func _prefill_login() -> void:
@@ -327,6 +362,7 @@ func _on_clock_tick() -> void:
 	epoch_value -= 1
 	_refresh_status_labels()
 	_check_idle_egg()
+	_check_idle_guidance()
 
 
 func _refresh_status_labels() -> void:
@@ -348,6 +384,69 @@ func _check_idle_egg() -> void:
 	idle_egg_shown = true
 	_old_say(data.idle.old)
 	_new_say(str(data.idle.new))
+
+
+func _check_idle_guidance() -> void:
+	if not boot_done or in_ending or is_instance_valid(_guide_popup):
+		return
+	if Time.get_ticks_msec() - last_activity_msec < int(guide_idle_seconds * 1000.0):
+		return
+	_show_guidance()
+
+
+func _guidance_content() -> Dictionary:
+	var guides: Dictionary = data.get("guidance", {})
+	var id := "free"
+	if not logged_in:
+		id = "login"
+	elif not pump_handled:
+		id = "pump"
+	elif not scan_done:
+		id = "scan"
+	elif not read_cat:
+		id = "void"
+	var fallback := {
+		"title": "GUIDE · Next Step",
+		"body": "Type [color=#8fe3ff]HELP[/color] for the command list.",
+		"ok": "Got it",
+	}
+	var page: Dictionary = guides.get(id, fallback)
+	page = page.duplicate()
+	page["id"] = id
+	return page
+
+
+func _show_guidance() -> void:
+	if not boot_done or in_ending or is_instance_valid(_guide_popup):
+		return
+	var page := _guidance_content()
+	var p: PanelContainer = POPUP_SCRIPT.new()
+	popup_layer.add_child(p)
+	_guide_popup = p
+	p.closed.connect(_on_guide_closed.bind(p))
+	p.open(
+		str(page.get("title", "GUIDE · Next Step")),
+		str(page.get("body", "")),
+		str(page.get("ok", "Got it")),
+		"guide"
+	)
+
+
+func _on_guide_closed(p: Node) -> void:
+	if _guide_popup == p:
+		_guide_popup = null
+
+
+func _mark_activity() -> void:
+	last_activity_msec = Time.get_ticks_msec()
+
+
+func _refocus_input_after_submit() -> void:
+	# Deferred because LineEdit may release editing after text_submitted. Do not
+	# fight an ending (the input is hidden). A later click on a popup may still
+	# blur the prompt, which is intentional.
+	if boot_done and not in_ending and input_line.visible and input_line.editable:
+		input_line.grab_focus()
 
 
 func _init_actions() -> void:
@@ -390,6 +489,7 @@ func _on_submit(raw: String) -> void:
 		return
 	_mark_input_activity()
 	input_line.grab_focus()
+	_refocus_input_after_submit.call_deferred()
 	_audio.on_player_input()
 	_audio.on_submit()
 
@@ -449,15 +549,70 @@ func _on_submit(raw: String) -> void:
 func _on_input_text_changed(_new_text: String) -> void:
 	if _programmatic_input:
 		return
+	# OLD takes the keyboard one character at a time. The caret stays where the
+	# player left it; only the glyph casing changes.
+	_assimilate_input()
 	_mark_input_activity()
 	history_cursor = -1
 	history_draft = ""
 	completion_index = 0
 	_refresh_completion()
+	_request_input_access()
+
+
+func _assimilate_input() -> void:
+	var current := input_line.text
+	var upper := current.to_upper()
+	if upper == current:
+		return
+	var caret := input_line.caret_column
+	var growth := maxi(upper.length() - current.length(), 0)
+	_programmatic_input = true
+	input_line.text = upper
+	input_line.caret_column = mini(caret + growth, upper.length())
+	_programmatic_input = false
+	if input_assimilated:
+		return
+	input_assimilated = true
+	var line := str(data.get("assimilate", ""))
+	if line != "" and not in_ending:
+		_new_say(line)
+
+
+func _request_input_access() -> void:
+	# NEW asks first, then admits it was already reading. The request itself is
+	# the reveal; the grayscale completion has been doing it since login.
+	if auth_requested or in_ending or not boot_done:
+		return
+	if not logged_in:
+		return
+	var auth: Dictionary = data.get("auth", {})
+	if auth.is_empty():
+		return
+	auth_requested = true
+	_popup_queue.append({
+		"title": str(auth.get("title", "NEW · Input Access Request")),
+		"body": str(auth.get("body", "")),
+		"ok": str(auth.get("ok", "Allow")),
+		"after": "auth",
+	})
+	_pump_popup()
+
+
+func _record_backspace() -> void:
+	if in_ending or not boot_done:
+		return
+	backspace_count += 1
+	if backspace_count < BACKSPACE_REVEAL or hesitation_shown:
+		return
+	hesitation_shown = true
+	var lines: Array = data.get("backspace", ["YOU HESITATED."])
+	_old_say(lines)
 
 
 func _mark_input_activity() -> void:
 	last_input_msec = Time.get_ticks_msec()
+	_mark_activity()
 	# Typing is real input. It also cancels the KILL 077 inheritance window.
 	if not inherit_timer.is_stopped():
 		inherit_timer.stop()
@@ -597,6 +752,8 @@ func _on_input_gui_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
 	if key == null or not key.pressed or key.echo:
 		return
+	if key.keycode == KEY_BACKSPACE:
+		_record_backspace()
 	if key.keycode == KEY_TAB:
 		_cycle_completion(key.shift_pressed)
 		accept_event()
@@ -776,6 +933,8 @@ func _handle_set_date(value: String) -> void:
 
 func _run(cmd: String) -> void:
 	last_cmd = cmd
+	if cmd == "LOGIN 077":
+		logged_in = true
 	var entry: Dictionary = commands[cmd]
 	_new_say(_new_text_for(cmd))
 	_old_say(entry.old)
@@ -827,7 +986,25 @@ func _old_say(lines: Array) -> void:
 	for line in lines:
 		pending_old.append(str(line).replace("{clock}", _clock()))
 	if old_timer.is_stopped():
+		old_timer.wait_time = _old_delay_seconds(lines)
 		old_timer.start()
+
+
+func _old_delay_seconds(lines: Array = []) -> float:
+	# The wait is OLD's state readout. Priority: the C window is closing, then
+	# the player has already let NEW decide / made the room noisy, then /VOID.
+	if old_delay_override >= 0.0:
+		return old_delay_override
+	if not inherit_timer.is_stopped() and inherit_timer.time_left <= OLD_ENDING_WINDOW:
+		return OLD_DELAY_ENDING_WINDOW
+	if pump_choice == "accept" or temp > 0 or junk_count >= 3:
+		return OLD_DELAY_NEW_PATH
+	if last_cmd.contains("VOID"):
+		return OLD_DELAY_DANGER
+	for line in lines:
+		if str(line).contains("VOID"):
+			return OLD_DELAY_DANGER
+	return OLD_DELAY_BASE
 
 
 func _on_old_timeout() -> void:
@@ -919,6 +1096,9 @@ func _act_kill() -> void:
 	# KILL before the full scan arms nothing yet; _finish_scan() starts the window.
 	if scan_done:
 		inherit_timer.start()
+	if not kill_glitch_played:
+		kill_glitch_played = true
+		_play_kill_glitch()
 	if not saw_that:
 		saw_that = true
 		_old_say(["WE SAW THAT."])
@@ -933,6 +1113,35 @@ func _schedule_fake07() -> void:
 	if not is_inside_tree() or in_ending or _fake07_seen:
 		return
 	_show_fake07()
+
+
+func _start_scan_band() -> void:
+	if scan_band == null:
+		return
+	if scan_band_tween and scan_band_tween.is_valid():
+		scan_band_tween.kill()
+	var rect := old_text.get_global_rect()
+	var top := rect.position.y
+	var travel := maxf(rect.size.y - SCAN_BAND_HEIGHT, 0.0)
+	scan_band.position = Vector2(rect.position.x, top)
+	scan_band.size = Vector2(rect.size.x, SCAN_BAND_HEIGHT)
+	scan_band.color = Color(0.588235, 1, 0.658824, 0.22)
+	scan_band.visible = true
+	scan_band_tween = create_tween().set_loops()
+	scan_band_tween.tween_property(scan_band, "position:y", top + travel, SCAN_BAND_TIME).set_trans(Tween.TRANS_LINEAR)
+	scan_band_tween.tween_callback(_reset_scan_band.bind(top))
+
+
+func _reset_scan_band(top: float) -> void:
+	if is_instance_valid(scan_band):
+		scan_band.position.y = top
+
+
+func _stop_scan_band() -> void:
+	if scan_band_tween and scan_band_tween.is_valid():
+		scan_band_tween.kill()
+	if is_instance_valid(scan_band):
+		scan_band.visible = false
 
 
 func _show_fake07() -> void:
@@ -956,6 +1165,7 @@ func _act_scan_full() -> void:
 		return
 	_hide_completion()
 	_audio.on_scan_start()
+	_start_scan_band()
 	scan_time = 0.0
 	scan_stage = 0
 	scan_found = false
@@ -1041,6 +1251,7 @@ func _print_scan_stream() -> void:
 
 func _finish_scan() -> void:
 	scan_timer.stop()
+	_stop_scan_band()
 	scan_stage = 3
 	scan_done = true
 	scan_bar.value = 100.0
@@ -1081,6 +1292,9 @@ func _begin_ending(key: String) -> void:
 	replay_index = 0
 	inherit_timer.stop()
 	scan_timer.stop()
+	_stop_scan_band()
+	if is_instance_valid(glitch_text):
+		glitch_text.visible = false
 	_clear_popups()
 	old_timer.stop()
 	pending_old.clear()
@@ -1137,6 +1351,25 @@ func _glitch_text(length: int) -> String:
 	var out := ""
 	for i in length:
 		out += GLITCH_POOL.substr(randi() % GLITCH_POOL.length(), 1)
+	return out
+
+
+func _play_kill_glitch() -> void:
+	if glitch_text == null or in_ending:
+		return
+	glitch_text.text = _glitch_block(KILL_GLITCH_CHARS, KILL_GLITCH_LINE)
+	glitch_text.visible = true
+	await get_tree().create_timer(KILL_GLITCH_TIME).timeout
+	if is_inside_tree() and is_instance_valid(glitch_text):
+		glitch_text.visible = false
+
+
+func _glitch_block(length: int, line_length: int) -> String:
+	var out := ""
+	for i in length:
+		out += GLITCH_POOL.substr(randi() % GLITCH_POOL.length(), 1)
+		if (i + 1) % line_length == 0:
+			out += "\n"
 	return out
 
 
@@ -1255,6 +1488,20 @@ func _show_final_line(text: String) -> void:
 	final_line.visible = true
 
 
+func _input(event: InputEvent) -> void:
+	# Guidance waits for complete inactivity: keys, clicks and mouse movement
+	# all count, so a player reading with the mouse does not get interrupted.
+	if event is InputEventKey:
+		if event.pressed and not event.echo:
+			_mark_activity()
+	elif event is InputEventMouseButton:
+		if event.pressed:
+			_mark_activity()
+	elif event is InputEventMouseMotion:
+		if event.relative.length_squared() > 0.0:
+			_mark_activity()
+
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
@@ -1313,11 +1560,19 @@ func _pump_popup() -> void:
 	p.open(str(item.title), str(item.body), str(item.get("ok", "Got it")))
 	p.closed.connect(_on_popup_closed.bind(p))
 	_popup = p
+	_popup_after = str(item.get("after", ""))
 
 
 func _on_popup_closed(p: Node) -> void:
 	if _popup == p:
 		_popup = null
+		var after := _popup_after
+		_popup_after = ""
+		if after == "auth" and not in_ending:
+			var auth: Dictionary = data.get("auth", {})
+			var reveal := str(auth.get("reveal", ""))
+			if reveal != "":
+				_new_say(reveal)
 	await get_tree().create_timer(0.35).timeout
 	if is_inside_tree():
 		_pump_popup()
@@ -1325,8 +1580,13 @@ func _on_popup_closed(p: Node) -> void:
 
 func _clear_popups() -> void:
 	_popup_queue.clear()
+	_popup_after = ""
 	var current := _popup
 	_popup = null
 	if is_instance_valid(current):
 		current.close()
+	var guide := _guide_popup
+	_guide_popup = null
+	if is_instance_valid(guide):
+		guide.close()
 
